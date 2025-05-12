@@ -513,13 +513,6 @@ async def send_master_photo(chat_id, state):
                 text=full_caption,
                 parse_mode=ParseMode.HTML
             )
-            
-        # Отправляем клавиатуру с кнопкой возврата к категориям мастеров в отдельном сообщении
-        await bot.send_message(
-            chat_id=chat_id,
-            text="Используйте кнопки для навигации:",
-            reply_markup=reply_markup
-        )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке фото мастера: {error_msg}")
@@ -576,9 +569,6 @@ async def send_master_work_photo(chat_id, state):
     # Добавляем кнопку возврата к категориям мастеров
     kb.add(InlineKeyboardButton("◀️ Вернуться к категориям", callback_data="master_back_to_categories"))
     
-    # Используем новую клавиатуру только с кнопкой возврата к категориям мастеров
-    reply_markup = buttons.masters_carousel_keyboard()
-    
     try:
         # Проверяем длину подписи
         if len(full_caption) <= 1024:
@@ -602,13 +592,6 @@ async def send_master_work_photo(chat_id, state):
                 text=full_caption,
                 parse_mode=ParseMode.HTML
             )
-            
-        # Отправляем клавиатуру с кнопкой возврата к категориям мастеров в отдельном сообщении
-        await bot.send_message(
-            chat_id=chat_id,
-            text="Используйте кнопки для навигации:",
-            reply_markup=reply_markup
-        )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке фото работы мастера: {error_msg}")
