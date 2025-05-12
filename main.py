@@ -6,7 +6,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
 from tg_bot.states import User
 from tg_bot import buttons
-import vk_fixed as vk
+import vk
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import asyncio
 import config
