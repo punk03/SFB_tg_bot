@@ -404,13 +404,14 @@ async def show_master(message: types.Message, state: FSMContext):
     # Удаляем сообщение о загрузке после получения данных
     await loading_message.delete()
     
-    if not photos:
-        await message.answer("⚠️ К сожалению, информация не найдена", 
-                            reply_markup=buttons.navigation_keyboard(include_masters_categories=True))
-        return
-    
     # Сохраняем выбранную категорию в состоянии для возможности возврата
     await state.update_data(current_master_category=found_category)
+    
+    if not photos or len(photos) == 0:
+        await message.answer(f"📂 <b>Категория {found_category}</b>\n\n⚠️ В данной категории пока нет мастеров. Вы можете стать первым, нажав кнопку 'Попасть в базу мастеров'.", 
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=buttons.navigation_keyboard(include_masters_categories=True))
+        return
     
     # Отправляем информацию о том, сколько фотографий будет показано
     await message.answer(f"📸 <b>Категория {found_category}</b>\n\nНайдено фотографий: {len(photos)}. Загружаю...", 
@@ -610,9 +611,9 @@ async def masters_sfb_handler(message, state: FSMContext):
     
     # Проверяем, есть ли актуальный кэш непустых категорий
     if non_empty_masters_cache and current_time - non_empty_masters_cache_time < config.CACHE_TIME:
-        logger.info("Используем кэш непустых категорий мастеров")
+        logger.info("Используем кэш категорий мастеров")
         category_buttons = non_empty_masters_cache.get("buttons", [])
-        non_empty = non_empty_masters_cache.get("categories", {})
+        all_categories = non_empty_masters_cache.get("all_categories", {})
     else:
         # Получаем данные о категориях только если кэш устарел
         try:
@@ -624,7 +625,7 @@ async def masters_sfb_handler(message, state: FSMContext):
                                     reply_markup=buttons.go_back())
                 return
                 
-            logger.info("Обновляем кэш непустых категорий мастеров")
+            logger.info("Обновляем кэш категорий мастеров")
             # Создаем задачи для параллельной загрузки фотографий
             tasks = []
             for cat, album_id in data.items():
@@ -634,22 +635,27 @@ async def masters_sfb_handler(message, state: FSMContext):
             
             # Последовательно обрабатываем результаты с паузами между запросами
             category_buttons = []
-            non_empty = {}
+            all_categories = {}
+            
+            # Сохраняем все категории и их ID
+            for cat, album_id in data.items():
+                all_categories[cat] = album_id
+            
+            # Получаем информацию о количестве фото в каждой категории
             for cat, album_id, task in tasks:
                 photos = await task
-                if photos and len(photos) > 0:
-                    category_buttons.append((cat, len(photos)))
-                    non_empty[cat] = album_id
+                count = len(photos) if photos else 0
+                category_buttons.append((cat, count))
             
             # Сохраняем результаты в кэш
             non_empty_masters_cache = {
                 "buttons": category_buttons,
-                "categories": non_empty
+                "all_categories": all_categories
             }
             non_empty_masters_cache_time = current_time
             
             # Логируем ключи для отладки
-            logger.info(f"Категории мастеров в кэше: {list(non_empty.keys())}")
+            logger.info(f"Все категории мастеров в кэше: {list(all_categories.keys())}")
         except Exception as e:
             logger.error(f"Ошибка при получении категорий мастеров: {e}")
             await loading_message.delete()
@@ -663,19 +669,19 @@ async def masters_sfb_handler(message, state: FSMContext):
     await loading_message.delete()
     
     if not category_buttons:
-        await message.answer("⚠️ Нет ни одной категории с мастерами.", reply_markup=buttons.go_back())
+        await message.answer("⚠️ Нет ни одной категории мастеров.", reply_markup=buttons.go_back())
         return
     
     # Логируем для отладки
     logger.info(f"Категории кнопок: {[cat for cat, _ in category_buttons]}")
-    logger.info(f"Категории данных: {list(non_empty.keys())}")
+    logger.info(f"Категории данных: {list(all_categories.keys())}")
         
     kb = buttons.generator(category_buttons)
     await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
                         parse_mode=ParseMode.HTML,
                         reply_markup=kb)
     await User.get_master.set()
-    await state.set_data(non_empty)
+    await state.set_data(all_categories)
 
 @cached
 async def get_market_categories_async(token, group_id, force_update=False):
@@ -1166,9 +1172,31 @@ async def vk_partner_handler(message: types.Message):
 # Обработчик для кнопки "Попасть в базу мастеров"
 @dp.message_handler(lambda m: m.text == "📋 Попасть в базу мастеров" or m.text == "Попасть в базу мастеров")
 async def vk_master_handler(message: types.Message):
+    # Проверяем есть ли кэш категорий для информационного сообщения
+    global non_empty_masters_cache
+    
+    # Формируем сообщение о категориях
+    category_info = ""
+    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
+        categories = list(non_empty_masters_cache["all_categories"].keys())
+        if categories:
+            category_info = "\n\n<b>Доступные категории мастеров:</b>\n"
+            for cat in sorted(categories):
+                # Убираем эмодзи из названия категории для вывода
+                cleaned_cat = cat
+                for emoji in ["🔨", "🚜", "🏗", "🔧", "📁"]:
+                    if cleaned_cat.startswith(emoji + " "):
+                        cleaned_cat = cleaned_cat[len(emoji) + 1:]
+                        break
+                category_info += f"• {cleaned_cat}\n"
+    
     await message.answer(
         "📋 <b>Хочу в базу мастеров и спецтехники</b>\n\n"
-        "Чтобы попасть в базу мастеров, перейдите по ссылке ниже и оставьте заявку:\n"
+        "Чтобы попасть в базу мастеров:\n\n"
+        "1️⃣ Подготовьте фотографию с информацией о ваших услугах\n"
+        "2️⃣ Укажите категорию из списка ниже\n"
+        "3️⃣ Оставьте заявку по ссылке:" 
+        f"{category_info}\n\n"
         f"<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>",
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.go_back()
@@ -1214,7 +1242,7 @@ async def cache_status_command(message: types.Message):
             'expired': age > config.CACHE_TIME
         })
     
-    # Добавляем информацию о кэше непустых категорий мастеров
+    # Добавляем информацию о кэше категорий мастеров
     if non_empty_masters_cache:
         age = current_time - non_empty_masters_cache_time
         age_hours = age // 3600
@@ -1225,12 +1253,18 @@ async def cache_status_command(message: types.Message):
         expires_minutes = (expires_in % 3600) // 60
         expires_seconds = expires_in % 60
         
+        # Подсчитываем количество категорий с мастерами (непустых)
+        non_empty_count = 0
+        if "buttons" in non_empty_masters_cache:
+            non_empty_count = len([cat for cat, count in non_empty_masters_cache["buttons"] if count > 0])
+        
         cache_info.append({
-            'key': 'non_empty_masters_cache',
+            'key': 'masters_categories_cache',
             'age': f"{int(age_hours)}ч {int(age_minutes)}м {int(age_seconds)}с",
             'expires': f"{int(expires_hours)}ч {int(expires_minutes)}м {int(expires_seconds)}с",
             'expired': age > config.CACHE_TIME,
-            'categories': len(non_empty_masters_cache.get('categories', {})),
+            'all_categories': len(non_empty_masters_cache.get('all_categories', {})),
+            'non_empty_categories': non_empty_count,
             'buttons': len(non_empty_masters_cache.get('buttons', []))
         })
     
@@ -1273,9 +1307,10 @@ async def cache_status_command(message: types.Message):
         if not item['expired']:
             cache_status += f"⏳ Истекает через: {item['expires']}\n"
         
-        # Добавляем информацию о непустых категориях мастеров
-        if item['key'] == 'non_empty_masters_cache':
-            cache_status += f"📁 Категорий мастеров: {item['categories']}\n"
+        # Добавляем информацию о категориях мастеров
+        if item['key'] == 'masters_categories_cache':
+            cache_status += f"📁 Всего категорий мастеров: {item['all_categories']}\n"
+            cache_status += f"📊 Категорий с мастерами: {item['non_empty_categories']}\n"
             cache_status += f"🔢 Кнопок: {item['buttons']}\n"
         
         # Добавляем информацию о магазинах
@@ -1335,11 +1370,11 @@ async def update_cache_command(message: types.Message):
         albums = await get_album_names_async(config.VK_TOKEN, config.VK_GROUP_ID, force_update=True)
         await message.answer(f"✅ Данные об альбомах обновлены. Альбомов: {len(albums)}")
         
-        # Обновляем кэш непустых категорий мастеров
+        # Обновляем кэш категорий мастеров
         global non_empty_masters_cache, non_empty_masters_cache_time
         
         # Показываем сообщение о начале обновления кэша мастеров
-        updating_masters_message = await message.answer("🔄 Обновляю кэш непустых категорий мастеров...")
+        updating_masters_message = await message.answer("🔄 Обновляю кэш категорий мастеров...")
         
         # Создаем задачи для параллельной загрузки фотографий
         tasks = []
@@ -1350,38 +1385,46 @@ async def update_cache_command(message: types.Message):
         
         # Обрабатываем результаты
         category_buttons = []
-        non_empty = {}
+        all_categories = {}
+        
+        # Сохраняем все категории и их ID
+        for cat, album_id in albums.items():
+            all_categories[cat] = album_id
+            
+        # Получаем информацию о количестве фото в каждой категории
         for cat, album_id, task in tasks:
             photos = await task
-            if photos and len(photos) > 0:
-                category_buttons.append((cat, len(photos)))
-                non_empty[cat] = album_id
+            count = len(photos) if photos else 0
+            category_buttons.append((cat, count))
         
         # Сохраняем результаты в кэш
         non_empty_masters_cache = {
             "buttons": category_buttons,
-            "categories": non_empty
+            "all_categories": all_categories
         }
         non_empty_masters_cache_time = time.time()
         
         # Удаляем сообщение о загрузке и показываем результат
         await updating_masters_message.delete()
-        await message.answer(f"✅ Кэш непустых категорий мастеров обновлен. Найдено {len(non_empty)} непустых категорий.")
+        
+        # Подсчитываем количество категорий с контентом
+        non_empty_count = len([cat for cat, count in category_buttons if count > 0])
+        
+        await message.answer(f"✅ Кэш категорий мастеров обновлен.\n📊 Всего категорий: {len(all_categories)}\n📈 Категорий с мастерами: {non_empty_count}")
         
         # Обновляем данные о категориях маркета
         await vk_api_rate_limit()  # Ограничение API
-        market = await get_market_categories_async(config.VK_TOKEN, config.VK_GROUP_ID, force_update=True)
-        await message.answer(f"✅ Данные о категориях маркета обновлены. Категорий: {len(market)}")
+        market_categories = await get_market_categories_async(config.VK_TOKEN, config.VK_GROUP_ID, force_update=True)
+        await message.answer(f"✅ Данные о категориях маркета обновлены. Категорий: {len(market_categories)}")
         
-        # Обновляем описание группы
-        await vk_api_rate_limit()  # Ограничение API
-        description = await get_group_description_async(config.VK_TOKEN, config.VK_GROUP_ID, force_update=True)
-        await message.answer(f"✅ Описание группы обновлено: {len(description) if description else 0} символов")
+        # Очищаем кэш старых записей
+        clear_old_cache_entries()
         
-        await message.answer("✅ Кэш успешно обновлен! Используйте команду /cache_status для проверки статуса кэша.")
+        await message.answer("✅ Обновление кэша завершено!")
     except Exception as e:
         logger.error(f"Ошибка при обновлении кэша: {e}")
-        await message.answer(f"❌ Ошибка при обновлении кэша: {str(e)}")
+        await message.answer(f"⚠️ Произошла ошибка при обновлении кэша: {str(e)}")
+        return
 
 async def on_startup(dp):
     logger.info('🚀 Бот запущен')
@@ -1424,12 +1467,12 @@ async def back_to_master_categories(message: types.Message, state: FSMContext):
         
         # Проверяем, есть ли актуальный кэш непустых категорий
         if non_empty_masters_cache and current_time - non_empty_masters_cache_time < config.CACHE_TIME:
-            logger.info("Используем кэш непустых категорий мастеров при возврате")
+            logger.info("Используем кэш категорий мастеров при возврате")
             category_buttons = non_empty_masters_cache.get("buttons", [])
-            non_empty = non_empty_masters_cache.get("categories", {})
+            all_categories = non_empty_masters_cache.get("all_categories", {})
         else:
             # Получаем данные о категориях только если кэш устарел
-            logger.info("Обновляем кэш непустых категорий мастеров при возврате")
+            logger.info("Обновляем кэш категорий мастеров при возврате")
             data = await get_album_names_async(config.VK_TOKEN, config.VK_GROUP_ID)
             
             if not data:
@@ -1447,27 +1490,32 @@ async def back_to_master_categories(message: types.Message, state: FSMContext):
             
             # Последовательно обрабатываем результаты с паузами между запросами
             category_buttons = []
-            non_empty = {}
+            all_categories = {}
+            
+            # Сохраняем все категории и их ID
+            for cat, album_id in data.items():
+                all_categories[cat] = album_id
+            
+            # Получаем информацию о количестве фото в каждой категории
             for cat, album_id, task in tasks:
                 photos = await task
-                if photos and len(photos) > 0:
-                    category_buttons.append((cat, len(photos)))
-                    non_empty[cat] = album_id
+                count = len(photos) if photos else 0
+                category_buttons.append((cat, count))
             
             # Сохраняем результаты в кэш
             non_empty_masters_cache = {
                 "buttons": category_buttons,
-                "categories": non_empty
+                "all_categories": all_categories
             }
             non_empty_masters_cache_time = current_time
             
-            logger.info(f"Категории мастеров при возврате: {list(non_empty.keys())}")
+            logger.info(f"Все категории мастеров при возврате: {list(all_categories.keys())}")
         
         # Удаляем сообщение о загрузке
         await loading_message.delete()
         
         if not category_buttons:
-            await message.answer("⚠️ Нет ни одной категории с мастерами.", reply_markup=buttons.go_back())
+            await message.answer("⚠️ Нет ни одной категории мастеров.", reply_markup=buttons.go_back())
             return
         
         # Создаем клавиатуру заново
@@ -1478,7 +1526,7 @@ async def back_to_master_categories(message: types.Message, state: FSMContext):
         
         # Устанавливаем состояние и сохраняем данные
         await User.get_master.set()
-        await state.set_data(non_empty)
+        await state.set_data(all_categories)
         
         logger.info("Успешно выполнен возврат к категориям мастеров")
     
