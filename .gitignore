@@ -1,0 +1,49 @@
+# Виртуальное окружение Python
+venv/
+env/
+ENV/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Логи
+logs/
+*.log
+
+# Локальные настройки
+.env
+.env.local
+
+# Кэш IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Снапшоты и архивы
+*.zip
+*.tar.gz
+*.tar
+
+# Docker
+.dockerignore 
