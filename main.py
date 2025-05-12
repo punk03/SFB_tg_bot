@@ -593,7 +593,7 @@ async def send_master_work_photo(chat_id, state):
         # Устанавливаем клавиатуру с кнопками навигации
         await bot.send_message(
             chat_id=chat_id,
-            text="\u200B", # Невидимый символ
+            text="⠀", # Символ пробела Брайля (выглядит как пробел, но считается символом)
             reply_markup=reply_markup
         )
     except Exception as e:
