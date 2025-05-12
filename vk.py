@@ -73,15 +73,15 @@ def get_group_description(token, group_id):
 def get_album_names(token, group_id):
     """Получает названия альбомов группы ВКонтакте"""
     try:
-    # Авторизация через токен
+        # Авторизация через токен
         vk_session = get_vk_session(token)
         if not vk_session:
             return {}
             
-    vk = vk_session.get_api()
+        vk = vk_session.get_api()
 
-    # Запрос списка альбомов группы
-    response = vk.photos.getAlbums(
+        # Запрос списка альбомов группы
+        response = vk.photos.getAlbums(
             owner_id=-group_id  # Знак '-' перед group_id указывает, что это группа
         )
 
@@ -106,7 +106,7 @@ def get_album_names(token, group_id):
             data[album_title] = album_id
             
         logger.info(f"Получено {len(data)} альбомов из группы {group_id}")
-    return data
+        return data
 
     except Exception as e:
         logger.error(f"Ошибка при получении альбомов: {e}")
@@ -194,7 +194,7 @@ def get_shop_list(token, owner_id):
         if not vk_session:
             return {}
             
-    vk = vk_session.get_api()
+        vk = vk_session.get_api()
 
         # Получаем категории товаров
         shop_categories = {}
@@ -267,123 +267,70 @@ def get_shop_list(token, owner_id):
                     work_hours = "Не указаны"
                     
                     # Пытаемся извлечь информацию из описания
-                    for line in description.split("\n"):
+                    lines = description.split("\n")
+                    for line in lines:
                         line = line.strip()
-                        if line.startswith("Адрес:") or line.startswith("📍"):
-                            address = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                        elif line.startswith("Телефон:") or line.startswith("📞"):
-                            phone = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                        elif line.startswith("Сайт:") or line.startswith("🌐"):
-                            website = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                        elif line.startswith("Режим работы:") or line.startswith("Часы работы:") or line.startswith("🕒"):
-                            work_hours = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
+                        if not line:
+                            continue
+                            
+                        # Ищем адрес
+                        if line.lower().startswith("адрес:") or line.lower().startswith("адрес "):
+                            address = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+                        
+                        # Ищем телефон
+                        elif (line.lower().startswith("тел:") or 
+                              line.lower().startswith("телефон:") or
+                              line.lower().startswith("тел.") or
+                              line.lower().startswith("т:")):
+                            phone = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+                        
+                        # Ищем сайт
+                        elif (line.lower().startswith("сайт:") or 
+                              line.lower().startswith("website:") or
+                              line.lower().startswith("http") or
+                              ".ru" in line or ".com" in line or ".рф" in line):
+                            website = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+                            
+                        # Ищем время работы
+                        elif (line.lower().startswith("режим") or 
+                              line.lower().startswith("время") or
+                              line.lower().startswith("часы") or
+                              "работаем" in line.lower()):
+                            work_hours = line.split(":", 1)[1].strip() if ":" in line else line.strip()
                     
-                    # Формируем уникальный ключ для магазина
-                    shop_key = f"🏪 {title}"
-                    
-                    # Формируем данные магазина
-                    shop_data = {
-                        "id": item_id,
+                    # Создаем структуру с информацией о магазине
+                    shop_info = {
                         "title": title,
                         "description": description,
+                        "photo": photo_url,
                         "address": address,
                         "phone": phone,
                         "website": website,
                         "work_hours": work_hours,
-                        "photo": photo_url,
-                        "vk_url": f"https://vk.com/market-{owner_id}?w=product-{owner_id}_{item_id}",
-                        "category": album_title.replace("🏪 ", "").replace("🧱 ", "").replace("🔨 ", "").replace("🪑 ", "").replace("🌱 ", "").replace("🚿 ", "").replace("🔌 ", "").replace("🏡 ", "")
+                        # Ссылка на товар в ВК
+                        "vk_url": f"https://vk.com/market-{owner_id}?w=product-{owner_id}_{item_id}"
                     }
                     
-                    # Добавляем магазин в категорию
-                    shop_categories[album_title][shop_key] = shop_data
-                    # Добавляем магазин в общий список
-                    all_shops[shop_key] = shop_data
+                    # Добавляем магазин в категорию и в общий список магазинов
+                    key = f"🏪 {title}"
+                    shop_categories[album_title][key] = shop_info
+                    all_shops[key] = shop_info
             
-            # Если категорий нет или они пустые, проверяем наличие товаров вне категорий
-            if not shop_categories or all(len(shops) == 0 for category, shops in shop_categories.items()):
-                logger.info("Категории пусты, проверяем товары вне категорий...")
-                
-                # Получаем товары без категории
-                items = vk.market.get(owner_id=-owner_id, count=200, extended=1)
-                
-                if items and items.get("items"):
-                    # Создаем категорию "Все магазины"
-                    all_category = "🏪 Все магазины"
-                    shop_categories[all_category] = {}
-                    
-                    for item in items.get("items", []):
-                        # Аналогичная обработка товаров как выше
-                        item_id = item.get("id")
-                        title = item.get("title", "Магазин без названия")
-                        description = item.get("description", "")
-                        
-                        photo_url = item.get("thumb_photo")
-                        
-                        # Парсим дополнительную информацию из описания
-                        address = "Адрес не указан"
-                        phone = "Телефон не указан"
-                        website = "#"
-                        work_hours = "Не указаны"
-                        
-                        for line in description.split("\n"):
-                            line = line.strip()
-                            if line.startswith("Адрес:") or line.startswith("📍"):
-                                address = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                            elif line.startswith("Телефон:") or line.startswith("📞"):
-                                phone = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                            elif line.startswith("Сайт:") or line.startswith("🌐"):
-                                website = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                            elif line.startswith("Режим работы:") or line.startswith("Часы работы:") or line.startswith("🕒"):
-                                work_hours = line.split(":", 1)[1].strip() if ":" in line else line[1:].strip()
-                        
-                        shop_key = f"🏪 {title}"
-                        
-                        shop_data = {
-                            "id": item_id,
-                            "title": title,
-                            "description": description,
-                            "address": address,
-                            "phone": phone,
-                            "website": website,
-                            "work_hours": work_hours,
-                            "photo": photo_url,
-                            "vk_url": f"https://vk.com/market-{owner_id}?w=product-{owner_id}_{item_id}",
-                            "category": "Все магазины"
-                        }
-                        
-                        shop_categories[all_category][shop_key] = shop_data
-                        all_shops[shop_key] = shop_data
-            
-            # Если список категорий все ещё пуст, возвращаем пустой словарь
-            if not shop_categories or all(len(shops) == 0 for category, shops in shop_categories.items()):
-                logger.warning("Не удалось получить магазины из ВКонтакте")
-                return {"all_shops": {}}
-            
-            # Добавляем плоский список ко всем категориям для совместимости
+            # Добавляем все магазины в отдельную категорию
             shop_categories["all_shops"] = all_shops
-            
-            # Логируем количество категорий и магазинов
-            category_count = len(shop_categories) - 1  # Без all_shops
-            shop_count = len(all_shops)
-            logger.info(f"Получено {shop_count} магазинов-партнеров в {category_count} категориях")
-            
-            # Для отладки выводим названия категорий
-            logger.info(f"Категории магазинов: {[k for k in shop_categories.keys() if k != 'all_shops']}")
             
             return shop_categories
             
         except Exception as e:
-            logger.error(f"Ошибка при получении товаров из категории: {e}")
-            # Возвращаем пустой словарь без использования тестовых данных
+            logger.error(f"Ошибка при обработке категорий товаров: {e}")
             return {"all_shops": {}}
-
+            
     except Exception as e:
         logger.error(f"Ошибка при получении списка магазинов: {e}")
         return {"all_shops": {}}
 
 def get_market_item_info(token, owner_id, album_id):
-    """Получает информацию о товарах из категории маркета группы ВКонтакте"""
+    """Получает товары из выбранной категории"""
     try:
         vk_session = get_vk_session(token)
         if not vk_session:
@@ -392,12 +339,16 @@ def get_market_item_info(token, owner_id, album_id):
         vk = vk_session.get_api()
 
         # Получаем товары из категории
-        items = vk.market.get(
-            owner_id=-owner_id, album_id=album_id, count=200, extended=1
-        )
+        items = vk.market.get(owner_id=-owner_id, album_id=album_id, count=200, extended=1)
         result = []
 
         for item in items.get("items", []):
+            # Собираем основную информацию о товаре
+            item_id = item.get("id")
+            title = item.get("title", "Товар без названия")
+            description = item.get("description", "")
+            price = item.get("price", {}).get("text", "Цена не указана")
+            
             # Получаем лучшее фото товара
             photo_url = None
             if "photos" in item and item["photos"]:
@@ -411,54 +362,21 @@ def get_market_item_info(token, owner_id, album_id):
                     photo_url = item.get("thumb_photo")
             else:
                 photo_url = item.get("thumb_photo")
-
-            # Форматируем цену если она есть
-            price_text = ""
-            if "price" in item:
-                price = item["price"].get("text", "")
-                if price:
-                    price_text = f"\n💰 Цена: {price}"
-
-            # Добавляем информацию о товаре
-            result.append(
-                {
-                    "title": item.get("title", "Товар без названия"),
-                    "description": item.get("description", "") + price_text,
-                    "photo": photo_url,
-                    "url": f"https://vk.com/market-{owner_id}?w=product-{owner_id}_{item.get('id')}",
-                    "price": item.get("price", {}).get("text", "")
-                }
-            )
+            
+            # Создаем структуру с информацией о товаре
+            item_info = {
+                "title": title,
+                "description": description,
+                "price": price,
+                "photo": photo_url,
+                "url": f"https://vk.com/market-{owner_id}?w=product-{owner_id}_{item_id}"
+            }
+            
+            result.append(item_info)
 
         logger.info(f"Получено {len(result)} товаров из категории {album_id}")
         return result
 
     except Exception as e:
         logger.error(f"Ошибка при получении товаров из категории {album_id}: {e}")
-        return []
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    token = "vk1.a.hyubBHqaBx7Pws9eH-kK0uZtw617T5GPhsRa8k0WvIEpz321CjWx3MpN-jqCTBuB6RXl1mb2dxd38WhBooney-79ZO1fjHXmwBQ4QNOhmJPvdPZiXE8KHPy05zYjUz72V7KXnrn-Bh7_DaKzkk-W5MdliJtsbR-RNo1HFUtByof4pLkaMz-wg27ezaLpet8U06nQ1skIk03sToud8eO7fA"
-    group_id = 95855103
-    
-    # Тестирование функций
-    albums = get_album_names(token, group_id)
-    print(f"Альбомы: {len(albums)}")
-    
-    if albums:
-        sample_album_id = list(albums.values())[0]
-        photos = get_album_photos(token, group_id, sample_album_id)
-        print(f"Фотографии: {len(photos)}")
-    
-    market_categories = get_market_items(token, group_id)
-    print(f"Категории товаров: {len(market_categories)}")
-    
-    if market_categories:
-        sample_category_id = list(market_categories.values())[0]
-        items = get_market_item_info(token, group_id, sample_category_id)
-        print(f"Товары: {len(items)}")
-        
-    shops = get_shop_list(token, group_id)
-    print(f"Магазины: {len(shops)}")
+        return [] 
