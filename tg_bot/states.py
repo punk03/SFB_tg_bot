@@ -9,6 +9,7 @@ class User(StatesGroup):
     get_shop_info = State()  # Состояние просмотра информации о магазине
     get_shop_category = State()  # Состояние выбора категории магазинов
     view_masters_carousel = State()  # Состояние просмотра карусели мастеров
+    view_master_works = State()  # Состояние просмотра работ мастера
     
     # Расширенные состояния
     send_post = State()  # Состояние создания поста

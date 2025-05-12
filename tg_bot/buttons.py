@@ -315,6 +315,16 @@ def navigation_keyboard(include_shop_categories=False, include_masters_categorie
     
     return kb
 
+# Создание клавиатуры только с кнопкой возврата к категориям мастеров для карусели
+def masters_carousel_keyboard():
+    """
+    Создает клавиатуру только с кнопкой возврата к категориям мастеров для карусели
+    :return: ReplyKeyboardMarkup
+    """
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    kb.add(KeyboardButton('◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️'))
+    return kb
+
 """from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Keyboard
 from loader import topics
 

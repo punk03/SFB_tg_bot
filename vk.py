@@ -125,7 +125,8 @@ def get_album_photos(token, owner_id, album_id):
                 "url": photo_url,
                 "description": photo.get("text", ""),
                 "likes": photo.get("likes", {}).get("count", 0),
-                "date": photo.get("date")
+                "date": photo.get("date"),
+                "id": photo.get("id")  # Добавляем ID фотографии
             }
             
             result.append(photo_info)
@@ -368,4 +369,68 @@ def get_market_item_info(token, owner_id, album_id):
 
     except Exception as e:
         logger.error(f"Ошибка при получении товаров из категории {album_id}: {e}")
+        return []
+
+def get_photo_comments(token, owner_id, photo_id):
+    """Получает комментарии к фотографии от сообщества ВКонтакте"""
+    try:
+        vk_session = get_vk_session(token)
+        if not vk_session:
+            return []
+            
+        vk = vk_session.get_api()
+
+        # Получаем комментарии к фотографии
+        comments = vk.photos.getComments(
+            owner_id=-owner_id, 
+            photo_id=photo_id,
+            need_likes=0,
+            count=100,  # Максимальное количество комментариев
+            extended=1,  # Расширенная информация
+            fields="attachments"  # Запрашиваем вложения
+        )
+        
+        result = []
+        
+        # Фильтруем только комментарии от сообщества
+        for comment in comments.get("items", []):
+            # Проверяем, что комментарий от сообщества (от имени группы)
+            from_group = comment.get("from_group", 0)
+            from_id = comment.get("from_id", 0)
+            
+            # Комментарий от имени группы или от администратора группы
+            if from_group == owner_id or from_id == -owner_id:
+                # Извлекаем текст комментария
+                text = comment.get("text", "")
+                
+                # Извлекаем прикрепления (фотографии)
+                attachments = comment.get("attachments", [])
+                photos = []
+                
+                for attachment in attachments:
+                    if attachment.get("type") == "photo":
+                        photo = attachment.get("photo", {})
+                        # Находим максимальный размер фото
+                        if photo.get("sizes"):
+                            max_size = max(photo.get("sizes", []), 
+                                        key=lambda size: size.get("width", 0) * size.get("height", 0))
+                            photo_url = max_size.get("url")
+                            
+                            photo_info = {
+                                "url": photo_url,
+                                "description": text,
+                                "likes": photo.get("likes", {}).get("count", 0),
+                                "date": photo.get("date")
+                            }
+                            
+                            photos.append(photo_info)
+                
+                if photos:
+                    result.extend(photos)
+        
+        logger.info(f"Получено {len(result)} фотографий из комментариев к фото {photo_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении комментариев к фото {photo_id}: {e}")
         return [] 
