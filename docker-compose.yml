@@ -12,18 +12,6 @@ services:
       - TZ=Europe/Moscow
     networks:
       - bot-network
-      
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 300 stroy-forum-bot --cleanup
-    environment:
-      - TZ=Europe/Moscow
-    networks:
-      - bot-network
 
 networks:
   bot-network:
