@@ -91,18 +91,7 @@ def get_album_names(token, group_id):
             album_title = i.get("title", "Неизвестный альбом")
             album_id = i.get("id")
             
-            # Добавляем эмодзи к названиям категорий для улучшения UX
-            if "маст" in album_title.lower():
-                album_title = f"🔨 {album_title}"
-            elif "спецтех" in album_title.lower():
-                album_title = f"🚜 {album_title}"
-            elif "строит" in album_title.lower():
-                album_title = f"🏗 {album_title}"
-            elif "ремонт" in album_title.lower():
-                album_title = f"🔧 {album_title}"
-            else:
-                album_title = f"📁 {album_title}"
-                
+            # Больше не добавляем эмодзи к названиям категорий
             data[album_title] = album_id
             
         logger.info(f"Получено {len(data)} альбомов из группы {group_id}")

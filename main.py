@@ -1,7 +1,7 @@
 import logging
 import aiogram
 from aiogram import Bot, Dispatcher, types, executor
-from aiogram.types import ParseMode, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ParseMode, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
 from tg_bot.states import User
@@ -404,8 +404,12 @@ async def show_master(message: types.Message, state: FSMContext):
     # Удаляем сообщение о загрузке после получения данных
     await loading_message.delete()
     
-    # Сохраняем выбранную категорию в состоянии для возможности возврата
-    await state.update_data(current_master_category=found_category)
+    # Сохраняем выбранную категорию и фотографии в состоянии для карусели
+    await state.update_data(
+        current_master_category=found_category,
+        master_photos=photos,
+        current_photo_index=0
+    )
     
     if not photos or len(photos) == 0:
         await message.answer(f"📂 <b>Категория {found_category}</b>\n\n⚠️ В данной категории пока нет мастеров. Вы можете стать первым, нажав кнопку 'Попасть в базу мастеров'.", 
@@ -413,76 +417,156 @@ async def show_master(message: types.Message, state: FSMContext):
                             reply_markup=buttons.navigation_keyboard(include_masters_categories=True))
         return
     
-    # Отправляем информацию о том, сколько фотографий будет показано
-    await message.answer(f"📸 <b>Категория {found_category}</b>\n\nНайдено фотографий: {len(photos)}. Загружаю...", 
-                         parse_mode=ParseMode.HTML)
+    # Отправляем первую фотографию с кнопками навигации
+    await send_master_photo(message.chat.id, state)
     
-    # Ограничиваем количество фотографий для отправки, чтобы не превысить лимиты Telegram
-    # и не заставлять пользователя ждать слишком долго
-    max_photos = min(config.MAX_PHOTOS_PER_REQUEST, len(photos))  # Используем лимит из конфига
+    # Переходим в состояние просмотра карусели мастеров
+    await User.view_masters_carousel.set()
+
+# Функция для отправки фотографии мастера с кнопками навигации
+async def send_master_photo(chat_id, state):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    photos = data.get('master_photos', [])
+    current_index = data.get('current_photo_index', 0)
+    category = data.get('current_master_category', 'Мастера')
     
-    # Отправляем фотографии группами, чтобы ускорить процесс
-    sent_count = 0
-    for i, photo in enumerate(photos[:max_photos]):
-        caption = photo['description'] if photo['description'] else f"Фото {i+1} из {max_photos}"
-        full_caption = f"<b>📸 {found_category}</b>\n\n{caption}"
+    if not photos or len(photos) == 0:
+        await bot.send_message(
+            chat_id,
+            "⚠️ Фотографии не найдены.",
+            reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
+        )
+        return
+    
+    # Получаем текущую фотографию
+    photo = photos[current_index]
+    
+    # Формируем подпись
+    caption = photo.get('description', '') if photo.get('description') else f"Фото {current_index+1} из {len(photos)}"
+    full_caption = f"<b>📸 {category}</b>\n\n{caption}"
+    
+    # Добавляем ссылку на основной паблик ВКонтакте
+    full_caption += f"\n\n🌐 <a href='{config.VK_GROUP_URL}'>Перейти в основной паблик СФБ ВКонтакте</a>"
+    
+    # Создаем клавиатуру с кнопками навигации
+    kb = InlineKeyboardMarkup(row_width=2)
+    
+    # Добавляем кнопку "Назад", если не первая фотография
+    if current_index > 0:
+        kb.insert(InlineKeyboardButton("◀️ Назад", callback_data="master_prev"))
+    
+    # Добавляем кнопку "Далее", если не последняя фотография
+    if current_index < len(photos) - 1:
+        kb.insert(InlineKeyboardButton("Далее ▶️", callback_data="master_next"))
+    
+    # Добавляем счетчик и кнопку возврата к категориям
+    kb.add(InlineKeyboardButton(f"{current_index+1}/{len(photos)}", callback_data="master_count"))
+    kb.add(InlineKeyboardButton("◀️ Вернуться к категориям", callback_data="master_back_to_categories"))
+    
+    try:
+        # Проверяем длину подписи
+        if len(full_caption) <= 1024:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['url'],
+                caption=full_caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        else:
+            # Если подпись слишком длинная, отправляем фото и текст отдельно
+            logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['url'],
+                reply_markup=kb
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=full_caption,
+                parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Ошибка при отправке фото мастера: {error_msg}")
         
-        # Добавляем ссылку на основной паблик ВКонтакте
-        full_caption += f"\n\n🌐 <a href='{config.VK_GROUP_URL}'>Перейти в основной паблик СФБ ВКонтакте</a>"
-        
-        try:
-            # Проверяем длину подписи
-            if len(full_caption) <= 1024:
-                await message.answer_photo(
-                    photo=photo['url'], 
-                    caption=full_caption, 
-                    parse_mode=ParseMode.HTML
-                )
-            else:
-                # Если подпись слишком длинная, отправляем фото и текст отдельно
-                logger.info(f"Слишком длинная подпись для фото мастера в категории '{found_category}': {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-                await message.answer_photo(photo=photo['url'])
-                await message.answer(full_caption, parse_mode=ParseMode.HTML)
-                
-            sent_count += 1
-            
-            # Небольшая задержка между сообщениями, чтобы избежать флуда и лимитов Telegram
-            if i < max_photos - 1:  # Не добавляем задержку после последнего фото
-                await asyncio.sleep(config.PHOTO_DELAY)  # Используем задержку из конфига
-                
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Ошибка при отправке фото мастера: {error_msg}")
-            
-            # Обработка различных ошибок
-            if "Bad Request" in error_msg and ("Wrong file identifier" in error_msg or "PHOTO_INVALID_DIMENSIONS" in error_msg):
-                logger.warning(f"Проблема с фото мастера: {error_msg}")
-                await message.answer(
-                    f"<b>📸 {found_category}</b>\n\n{caption}\n\n⚠️ Изображение недоступно.",
-                    parse_mode=ParseMode.HTML
-                )
-            elif "Message caption is too long" in error_msg:
-                # Если проверка длины выше не сработала
-                logger.warning(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов")
-                try:
-                    await message.answer_photo(photo=photo['url'])
-                    await message.answer(full_caption, parse_mode=ParseMode.HTML)
-                except Exception as inner_e:
-                    logger.error(f"Повторная ошибка при отправке фото мастера: {inner_e}")
-                    await message.answer(full_caption, parse_mode=ParseMode.HTML)
-            else:
-                # Общая обработка ошибок
-                await message.answer(f"⚠️ Не удалось загрузить фото мастера. Описание: {caption}")
+        # Обработка различных ошибок
+        if "Bad Request" in error_msg and ("Wrong file identifier" in error_msg or "PHOTO_INVALID_DIMENSIONS" in error_msg):
+            logger.warning(f"Проблема с фото мастера: {error_msg}")
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"<b>📸 {category}</b>\n\n{caption}\n\n⚠️ Изображение недоступно.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        else:
+            # Общая обработка ошибок
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ Не удалось загрузить фото мастера. Описание: {caption}",
+                reply_markup=kb
+            )
+
+# Обработчик нажатия кнопки "Далее" в карусели мастеров
+@dp.callback_query_handler(lambda c: c.data == "master_next", state=User.view_masters_carousel)
+async def master_next_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    current_index = data.get('current_photo_index', 0)
+    photos = data.get('master_photos', [])
     
-    # Если фотографий больше, чем мы показали, сообщаем об этом
-    if len(photos) > max_photos:
-        await message.answer(f"⚠️ <b>Показано {max_photos} из {len(photos)} доступных фотографий.</b>\n\nДля просмотра остальных фотографий посетите группу ВКонтакте.", 
-                             parse_mode=ParseMode.HTML)
+    # Увеличиваем индекс, если не последняя фотография
+    if current_index < len(photos) - 1:
+        current_index += 1
+        await state.update_data(current_photo_index=current_index)
     
-    # После отправки всех фото показываем клавиатуру с кнопками навигации
-    await message.answer("🔍 <b>Просмотр завершен.</b> Вы можете вернуться к категориям мастеров или в главное меню.", 
-                         parse_mode=ParseMode.HTML,
-                         reply_markup=buttons.navigation_keyboard(include_masters_categories=True))
+    # Удаляем предыдущее сообщение
+    await callback_query.message.delete()
+    
+    # Отправляем новую фотографию
+    await send_master_photo(callback_query.message.chat.id, state)
+    
+    # Отвечаем на callback, чтобы убрать часики на кнопке
+    await callback_query.answer()
+
+# Обработчик нажатия кнопки "Назад" в карусели мастеров
+@dp.callback_query_handler(lambda c: c.data == "master_prev", state=User.view_masters_carousel)
+async def master_prev_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    current_index = data.get('current_photo_index', 0)
+    
+    # Уменьшаем индекс, если не первая фотография
+    if current_index > 0:
+        current_index -= 1
+        await state.update_data(current_photo_index=current_index)
+    
+    # Удаляем предыдущее сообщение
+    await callback_query.message.delete()
+    
+    # Отправляем новую фотографию
+    await send_master_photo(callback_query.message.chat.id, state)
+    
+    # Отвечаем на callback, чтобы убрать часики на кнопке
+    await callback_query.answer()
+
+# Обработчик нажатия на счетчик (ничего не делает)
+@dp.callback_query_handler(lambda c: c.data == "master_count", state=User.view_masters_carousel)
+async def master_count_callback(callback_query: types.CallbackQuery):
+    await callback_query.answer("Текущая позиция в галерее")
+
+# Обработчик нажатия кнопки "Вернуться к категориям" в карусели мастеров
+@dp.callback_query_handler(lambda c: c.data == "master_back_to_categories", state=User.view_masters_carousel)
+async def master_back_to_categories_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Удаляем предыдущее сообщение
+    await callback_query.message.delete()
+    
+    # Вызываем функцию возврата к категориям мастеров
+    await back_to_master_categories(callback_query.message, state)
+    
+    # Отвечаем на callback, чтобы убрать часики на кнопке
+    await callback_query.answer()
 
 @cached
 async def get_market_items_async(token, owner_id, album_id, force_update=False):
