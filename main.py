@@ -586,7 +586,7 @@ async def get_album_names_async(token, group_id, force_update=False):
     return await loop.run_in_executor(None, vk.get_album_names, token, group_id)
 
 # Обработчик для кнопки "База мастеров СФБ"
-@dp.message_handler(lambda m: m.text == "👷‍♂️ База мастеров СФБ")
+@dp.message_handler(lambda m: m.text == "👷‍♂️ База мастеров СФБ" or m.text == "База мастеров СФБ")
 async def masters_sfb_message(message: types.Message, state: FSMContext):
     await masters_sfb_button_handler(message)
 
@@ -695,7 +695,7 @@ async def get_shop_list_async(token, group_id, force_update=False):
     return await loop.run_in_executor(None, vk.get_shop_list, token, group_id)
 
 # Обработчик для кнопки "Магазины-партнеры СФБ"
-@dp.message_handler(lambda m: m.text == "🏪 Магазины-партнеры СФБ")
+@dp.message_handler(lambda m: m.text == "🏪 Магазины-партнеры СФБ" or m.text == "Магазины-партнеры СФБ")
 async def partners_stores_message(message: types.Message, state: FSMContext):
     await partners_stores_handler(message, state)
 
@@ -1142,7 +1142,7 @@ async def show_shop_info(message: types.Message, state: FSMContext):
             )
 
 # Обработчик для кнопки "Предложить запись"
-@dp.message_handler(lambda m: m.text == "📝 Предложить запись")
+@dp.message_handler(lambda m: m.text == "📝 Предложить запись" or m.text == "Предложить запись")
 async def offer_post_message(message: types.Message):
     await message.answer(
         "📝 <b>Предложить запись в сообществе</b>\n\n"
@@ -1153,7 +1153,7 @@ async def offer_post_message(message: types.Message):
     )
 
 # Обработчик для кнопки "Стать магазином-партнером"
-@dp.message_handler(lambda m: m.text == "🤝 Стать магазином-партнером")
+@dp.message_handler(lambda m: m.text == "🤝 Стать магазином-партнером" or m.text == "Стать магазином-партнером")
 async def vk_partner_handler(message: types.Message):
     await message.answer(
         "🤝 <b>Стать магазином-партнером</b>\n\n"
@@ -1164,7 +1164,7 @@ async def vk_partner_handler(message: types.Message):
     )
 
 # Обработчик для кнопки "Попасть в базу мастеров"
-@dp.message_handler(lambda m: m.text == "📋 Попасть в базу мастеров")
+@dp.message_handler(lambda m: m.text == "📋 Попасть в базу мастеров" or m.text == "Попасть в базу мастеров")
 async def vk_master_handler(message: types.Message):
     await message.answer(
         "📋 <b>Хочу в базу мастеров и спецтехники</b>\n\n"
@@ -1175,7 +1175,7 @@ async def vk_master_handler(message: types.Message):
     )
 
 # Обработчик для кнопки "Стена сообщества"
-@dp.message_handler(lambda m: m.text == "📰 Стена сообщества")
+@dp.message_handler(lambda m: m.text == "📰 Стена сообщества" or m.text == "Стена сообщества")
 async def community_wall_handler(message: types.Message):
     await message.answer(
         "📰 <b>Стена сообщества</b>\n\n"
