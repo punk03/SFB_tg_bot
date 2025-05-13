@@ -542,10 +542,14 @@ async def send_master_work_photo(chat_id, state):
     category = data.get('current_master_category', 'Мастера')
     
     if not photos or len(photos) == 0:
+        # Используем только InlineKeyboardMarkup вместо navigation_keyboard с категориями
+        inline_kb = InlineKeyboardMarkup(row_width=1)
+        inline_kb.add(InlineKeyboardButton("◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ", callback_data="master_back_to_categories"))
+        
         await bot.send_message(
             chat_id,
             "⚠️ Фотографии работ не найдены.",
-            reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
+            reply_markup=inline_kb
         )
         return
     
@@ -607,7 +611,7 @@ async def send_master_work_photo(chat_id, state):
         await bot.send_message(
             chat_id=chat_id,
             text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
-            parse_mode=ParseMode.HTML,
+                         parse_mode=ParseMode.HTML,
             reply_markup=kb
         )
 
@@ -647,11 +651,13 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         # Удаляем предыдущее сообщение с фото мастера
         await callback_query.message.delete()
         
+        # Полностью очищаем предыдущее состояние
+        await state.finish()
+        
         # Переходим в состояние просмотра работ мастера
         await User.view_master_works.set()
         
-        # Очищаем предыдущие данные состояния и сохраняем только необходимые данные
-        # Сохраняем только данные о работах мастера, категории и текущем индексе
+        # Сохраняем только необходимые данные
         await state.update_data(
             master_work_photos=work_photos,
             current_work_index=0,
@@ -956,7 +962,7 @@ async def masters_sfb_handler(message, state: FSMContext):
     logger.info(f"Категории кнопок: {[cat for cat, _ in category_buttons]}")
     logger.info(f"Категории данных: {list(all_categories.keys())}")
         
-    kb = buttons.generator(category_buttons, hide_counts=True)
+    kb = buttons.generator(category_buttons)
     await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
                         parse_mode=ParseMode.HTML,
                         reply_markup=kb)
@@ -1799,7 +1805,7 @@ async def back_to_master_categories(message: types.Message, state: FSMContext):
             return
         
         # Создаем клавиатуру заново
-        kb = buttons.generator(category_buttons, hide_counts=True)
+        kb = buttons.generator(category_buttons)
         await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
                             parse_mode=ParseMode.HTML,
                             reply_markup=kb)
