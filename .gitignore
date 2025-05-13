@@ -47,3 +47,6 @@ logs/
 
 # Docker
 .dockerignore 
+
+# Скрипты с конфиденциальными данными
+deploy_sfb_bot.sh 
