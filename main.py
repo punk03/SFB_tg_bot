@@ -563,6 +563,10 @@ async def send_master_work_photo(chat_id, state):
     # Добавляем счетчик
     kb.add(InlineKeyboardButton(f"{current_index+1}/{len(photos)}", callback_data="work_count"))
     
+    # Добавляем кнопки навигации к фотографии (возврат к анкете мастера и к категориям)
+    kb.add(InlineKeyboardButton("◀️ Вернуться к анкете мастера", callback_data="back_to_master"))
+    kb.add(InlineKeyboardButton("◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ", callback_data="master_back_to_categories"))
+    
     try:
         # Отправляем фото с подписью и с кнопками
         if len(full_caption) <= 1024:
@@ -1841,6 +1845,18 @@ async def keyboard_back_to_master(message: types.Message, state: FSMContext):
 async def keyboard_back_to_categories_from_works(message: types.Message, state: FSMContext):
     # Вызываем функцию возврата к категориям мастеров
     await back_to_master_categories(message, state)
+
+# Обработчик нажатия кнопки "Вернуться к категориям" в карусели работ мастера
+@dp.callback_query_handler(lambda c: c.data == "master_back_to_categories", state=User.view_master_works)
+async def master_works_back_to_categories_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Удаляем предыдущее сообщение
+    await callback_query.message.delete()
+    
+    # Вызываем функцию возврата к категориям мастеров
+    await back_to_master_categories(callback_query.message, state)
+    
+    # Отвечаем на callback, чтобы убрать часики на кнопке
+    await callback_query.answer()
 
 if __name__ == '__main__':
     try:
