@@ -563,11 +563,8 @@ async def send_master_work_photo(chat_id, state):
     # Добавляем счетчик
     kb.add(InlineKeyboardButton(f"{current_index+1}/{len(photos)}", callback_data="work_count"))
     
-    # Получаем клавиатуру с кнопками навигации
-    reply_markup = buttons.master_works_keyboard()
-    
     try:
-        # Проверяем длину подписи
+        # Отправляем фото с подписью и с кнопками
         if len(full_caption) <= 1024:
             await bot.send_photo(
                 chat_id=chat_id,
@@ -590,12 +587,6 @@ async def send_master_work_photo(chat_id, state):
                 parse_mode=ParseMode.HTML
             )
             
-        # Устанавливаем клавиатуру с кнопками навигации (без текста)
-        await bot.send_message(
-            chat_id=chat_id,
-            text="\u200B", # Невидимый символ Unicode (ноль-ширины пробел)
-            reply_markup=reply_markup
-        )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке фото работы мастера: {error_msg}")
