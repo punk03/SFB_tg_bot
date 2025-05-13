@@ -192,19 +192,103 @@ async def preload_critical_data():
         await vk_api_rate_limit()
         await get_group_description_async(config.VK_TOKEN, config.VK_GROUP_ID)
         
-        # Запускаем асинхронную задачу для загрузки остальных данных
+        # Предварительно загружаем всю базу мастеров синхронно, чтобы обеспечить мгновенный отклик
+        await preload_masters_data()
+        
+        # Запускаем асинхронную задачу для загрузки остальных данных (магазины, маркет)
         asyncio.create_task(preload_remaining_data())
         
     except Exception as e:
         logger.error(f"Ошибка при предварительной загрузке критических данных: {e}")
 
+# Функция для полной загрузки базы мастеров
+async def preload_masters_data():
+    """Предварительно загружает все данные о мастерах, включая категории, фотографии и работы"""
+    global non_empty_masters_cache, non_empty_masters_cache_time
+    try:
+        logger.info("Начинаю загрузку полной базы мастеров...")
+        start_time = time.time()
+        
+        # Загружаем альбомы мастеров
+        await vk_api_rate_limit()
+        albums = await get_album_names_async(config.VK_TOKEN, config.VK_GROUP_ID)
+        logger.info(f"✅ Альбомы мастеров загружены: найдено {len(albums)} категорий")
+        
+        if not albums:
+            logger.warning("⚠️ Не найдено категорий мастеров")
+            return
+        
+        # Создаем задачи для параллельной загрузки фотографий мастеров
+        tasks = []
+        for cat, album_id in albums.items():
+            await vk_api_rate_limit()
+            tasks.append((cat, album_id, get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)))
+        
+        # Обрабатываем результаты загрузки фотографий мастеров
+        category_buttons = []
+        all_categories = {}
+        all_master_photos = {}
+        master_works = {}
+        
+        # Сохраняем все категории и их ID
+        for cat, album_id in albums.items():
+            all_categories[cat] = album_id
+        
+        # Получаем информацию о количестве фото в каждой категории
+        for cat, album_id, task in tasks:
+            photos = await task
+            count = len(photos) if photos else 0
+            category_buttons.append((cat, count))
+            
+            # Сохраняем фотографии мастеров категории
+            all_master_photos[cat] = photos
+            
+            # Для каждого мастера также загружаем его работы
+            cat_work_tasks = []
+            if photos:
+                for photo in photos:
+                    photo_id = photo.get('id')
+                    if photo_id:
+                        await vk_api_rate_limit()
+                        cat_work_tasks.append((photo_id, get_photo_comments_async(config.VK_TOKEN, config.VK_GROUP_ID, photo_id)))
+            
+            # Получаем работы для мастеров категории
+            cat_works = {}
+            for photo_id, work_task in cat_work_tasks:
+                works = await work_task
+                if works and len(works) > 0:
+                    cat_works[photo_id] = works
+            
+            # Сохраняем работы мастеров категории
+            if cat_works:
+                master_works[cat] = cat_works
+                logger.info(f"✅ Категория '{cat}': загружено {len(photos)} мастеров и {len(cat_works)} мастеров с работами")
+            else:
+                logger.info(f"✅ Категория '{cat}': загружено {len(photos)} мастеров (без работ)")
+        
+        # Сохраняем результаты в кэш
+        non_empty_masters_cache = {
+            "buttons": category_buttons,
+            "all_categories": all_categories,
+            "master_photos": all_master_photos,
+            "master_works": master_works
+        }
+        non_empty_masters_cache_time = time.time()
+        
+        execution_time = time.time() - start_time
+        logger.info(f"✅ Предзагрузка базы мастеров завершена за {execution_time:.2f} сек")
+        logger.info(f"✅ Всего загружено {len(all_categories)} категорий, {sum(len(photos) for photos in all_master_photos.values())} мастеров и {sum(len(works) for works in master_works.values())} мастеров с работами")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке базы мастеров: {e}")
+
 async def preload_remaining_data():
-    """Асинхронно загружает остальные данные после запуска бота"""
+    """Асинхронно загружает остальные данные после запуска бота (магазины, маркет)"""
     try:
         # Даем боту время на инициализацию и обработку первых запросов
         await asyncio.sleep(5)
         
-        logger.info("Начинаю фоновую загрузку дополнительных данных...")
+        logger.info("Начинаю фоновую загрузку данных магазинов и маркета...")
         
         # Загружаем категории магазинов (ресурсоемкий запрос)
         await vk_api_rate_limit()
@@ -213,11 +297,6 @@ async def preload_remaining_data():
         shops_categories_cache = shops
         shops_categories_cache_time = time.time()
         logger.info("✅ Категории магазинов загружены в фоновом режиме")
-        
-        # Загружаем альбомы мастеров
-        await vk_api_rate_limit()
-        albums = await get_album_names_async(config.VK_TOKEN, config.VK_GROUP_ID)
-        logger.info("✅ Альбомы мастеров загружены в фоновом режиме")
         
         # Загружаем категории маркета
         await vk_api_rate_limit()
@@ -417,11 +496,18 @@ async def show_master(message: types.Message, state: FSMContext):
     # Показываем сообщение о загрузке
     loading_message = await message.answer(f"🔍 <b>Загружаю информацию о мастерах категории:</b> {found_category}...", 
                         parse_mode=ParseMode.HTML)
-                          
-    current = data.get(found_category)
-    logger.info(f"Загружаем альбом ID: {current} для категории '{found_category}'")
-    await vk_api_rate_limit()  # Применяем ограничение API
-    photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, current)
+    
+    # Пытаемся получить фотографии мастеров из кэша
+    photos = []
+    if non_empty_masters_cache and "master_photos" in non_empty_masters_cache and found_category in non_empty_masters_cache["master_photos"]:
+        photos = non_empty_masters_cache["master_photos"][found_category]
+        logger.info(f"Использую кэшированные фотографии мастеров для категории '{found_category}'")
+    else:
+        # Если в кэше нет, загружаем фотографии
+        current = data.get(found_category)
+        logger.info(f"Загружаем альбом ID: {current} для категории '{found_category}'")
+        await vk_api_rate_limit()  # Применяем ограничение API
+        photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, current)
     
     # Удаляем сообщение о загрузке после получения данных
     await loading_message.delete()
@@ -630,9 +716,31 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
     category = data.get('current_master_category', 'Мастера')
     
     try:
-        # Получаем комментарии к фотографии (работы мастера)
-        logger.info(f"Получаем работы мастера для фото ID: {photo_id}")
-        work_photos = await get_photo_comments_async(config.VK_TOKEN, config.VK_GROUP_ID, photo_id)
+        # Сначала проверяем, есть ли работы мастера в кэше
+        work_photos = []
+        global non_empty_masters_cache
+        if (non_empty_masters_cache and 
+            "master_works" in non_empty_masters_cache and 
+            category in non_empty_masters_cache["master_works"] and 
+            photo_id in non_empty_masters_cache["master_works"][category]):
+            # Берем работы из кэша
+            work_photos = non_empty_masters_cache["master_works"][category][photo_id]
+            logger.info(f"Использую кэшированные работы мастера для фото ID: {photo_id}")
+        else:
+            # Если в кэше нет, получаем комментарии к фотографии (работы мастера)
+            logger.info(f"Загружаем работы мастера для фото ID: {photo_id}")
+            work_photos = await get_photo_comments_async(config.VK_TOKEN, config.VK_GROUP_ID, photo_id)
+            
+            # Сохраняем в кэш для будущего использования
+            if work_photos and len(work_photos) > 0:
+                if not non_empty_masters_cache:
+                    non_empty_masters_cache = {}
+                if "master_works" not in non_empty_masters_cache:
+                    non_empty_masters_cache["master_works"] = {}
+                if category not in non_empty_masters_cache["master_works"]:
+                    non_empty_masters_cache["master_works"][category] = {}
+                non_empty_masters_cache["master_works"][category][photo_id] = work_photos
+                logger.info(f"Сохранил {len(work_photos)} работ мастера в кэш для фото ID: {photo_id}")
         
         # Удаляем сообщение о загрузке
         await loading_message.delete()
@@ -736,20 +844,36 @@ async def back_to_master_callback(callback_query: types.CallbackQuery, state: FS
     
     # Получаем фотографии мастера по категории
     album_id = None
-    # Попробуем получить альбом через кэш категорий
+    master_photos = []
+    
+    # Сначала проверяем, есть ли фотографии в кэше
     global non_empty_masters_cache
-    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
-        album_id = non_empty_masters_cache["all_categories"].get(category)
-    
-    if not album_id:
-        # Если не получилось, просто возвращаемся к категориям
-        await back_to_master_categories(callback_query.message, state)
-        await callback_query.answer()
-        return
-    
-    # Получаем фото мастера
-    await vk_api_rate_limit()
-    master_photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)
+    if non_empty_masters_cache and "master_photos" in non_empty_masters_cache and category in non_empty_masters_cache["master_photos"]:
+        master_photos = non_empty_masters_cache["master_photos"][category]
+        logger.info(f"Использую кэшированные фотографии мастеров для категории '{category}'")
+    else:
+        # Если нет, пробуем получить альбом через кэш категорий
+        if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
+            album_id = non_empty_masters_cache["all_categories"].get(category)
+        
+        if not album_id:
+            # Если не получилось, просто возвращаемся к категориям
+            await back_to_master_categories(callback_query.message, state)
+            await callback_query.answer()
+            return
+        
+        # Получаем фото мастера
+        await vk_api_rate_limit()
+        master_photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)
+        
+        # Сохраняем в кэш
+        if master_photos and len(master_photos) > 0:
+            if not non_empty_masters_cache:
+                non_empty_masters_cache = {}
+            if "master_photos" not in non_empty_masters_cache:
+                non_empty_masters_cache["master_photos"] = {}
+            non_empty_masters_cache["master_photos"][category] = master_photos
+            logger.info(f"Сохранил {len(master_photos)} фотографий мастеров в кэш для категории '{category}'")
     
     # Очищаем все данные состояния
     await state.finish()
@@ -901,54 +1025,18 @@ async def masters_sfb_handler(message, state: FSMContext):
         category_buttons = non_empty_masters_cache.get("buttons", [])
         all_categories = non_empty_masters_cache.get("all_categories", {})
     else:
-        # Получаем данные о категориях только если кэш устарел
-        try:
-            data = await get_album_names_async(config.VK_TOKEN, config.VK_GROUP_ID)
-            
-            if not data:
-                await loading_message.delete()
-                await message.answer("⚠️ К сожалению, категории мастеров не найдены",
-                                    reply_markup=buttons.go_back())
-                return
-                
-            logger.info("Обновляем кэш категорий мастеров")
-            # Создаем задачи для параллельной загрузки фотографий
-            tasks = []
-            for cat, album_id in data.items():
-                # Применяем ограничение частоты запросов перед каждым запросом
-                await vk_api_rate_limit()
-                tasks.append((cat, album_id, get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)))
-            
-            # Последовательно обрабатываем результаты с паузами между запросами
-            category_buttons = []
-            all_categories = {}
-            
-            # Сохраняем все категории и их ID
-            for cat, album_id in data.items():
-                all_categories[cat] = album_id
-            
-            # Получаем информацию о количестве фото в каждой категории
-            for cat, album_id, task in tasks:
-                photos = await task
-                count = len(photos) if photos else 0
-                category_buttons.append((cat, count))
-            
-            # Сохраняем результаты в кэш
-            non_empty_masters_cache = {
-                "buttons": category_buttons,
-                "all_categories": all_categories
-            }
-            non_empty_masters_cache_time = current_time
-            
-            # Логируем ключи для отладки
-            logger.info(f"Все категории мастеров в кэше: {list(all_categories.keys())}")
-        except Exception as e:
-            logger.error(f"Ошибка при получении категорий мастеров: {e}")
+        # Если кэш отсутствует или устарел, запускаем полную предзагрузку
+        logger.info("Кэш отсутствует или устарел, запускаем предзагрузку")
+        await preload_masters_data()
+        
+        # Повторно проверяем наличие данных после загрузки
+        if non_empty_masters_cache:
+            category_buttons = non_empty_masters_cache.get("buttons", [])
+            all_categories = non_empty_masters_cache.get("all_categories", {})
+        else:
             await loading_message.delete()
-            await message.answer(
-                "⚠️ Произошла ошибка при загрузке категорий мастеров. Пожалуйста, попробуйте позже.",
-                reply_markup=buttons.go_back()
-            )
+            await message.answer("⚠️ Не удалось загрузить категории мастеров. Пожалуйста, попробуйте позже.",
+                             reply_markup=buttons.go_back())
             return
     
     # Удаляем сообщение о загрузке
@@ -1757,45 +1845,19 @@ async def back_to_master_categories(message: types.Message, state: FSMContext):
             category_buttons = non_empty_masters_cache.get("buttons", [])
             all_categories = non_empty_masters_cache.get("all_categories", {})
         else:
-            # Получаем данные о категориях только если кэш устарел
-            logger.info("Обновляем кэш категорий мастеров при возврате")
-            data = await get_album_names_async(config.VK_TOKEN, config.VK_GROUP_ID)
+            # Если кэш отсутствует или устарел, запускаем полную предзагрузку
+            logger.info("Кэш отсутствует или устарел, запускаем предзагрузку")
+            await preload_masters_data()
             
-            if not data:
+            # Повторно проверяем наличие данных после загрузки
+            if non_empty_masters_cache:
+                category_buttons = non_empty_masters_cache.get("buttons", [])
+                all_categories = non_empty_masters_cache.get("all_categories", {})
+            else:
                 await loading_message.delete()
-                await message.answer("⚠️ К сожалению, категории мастеров не найдены",
-                                    reply_markup=buttons.go_back())
+                await message.answer("⚠️ Не удалось загрузить категории мастеров. Пожалуйста, попробуйте позже.",
+                              reply_markup=buttons.go_back())
                 return
-                
-            # Создаем задачи для параллельной загрузки фотографий
-            tasks = []
-            for cat, album_id in data.items():
-                # Применяем ограничение частоты запросов перед каждым запросом
-                await vk_api_rate_limit()
-                tasks.append((cat, album_id, get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)))
-            
-            # Последовательно обрабатываем результаты с паузами между запросами
-            category_buttons = []
-            all_categories = {}
-            
-            # Сохраняем все категории и их ID
-            for cat, album_id in data.items():
-                all_categories[cat] = album_id
-            
-            # Получаем информацию о количестве фото в каждой категории
-            for cat, album_id, task in tasks:
-                photos = await task
-                count = len(photos) if photos else 0
-                category_buttons.append((cat, count))
-            
-            # Сохраняем результаты в кэш
-            non_empty_masters_cache = {
-                "buttons": category_buttons,
-                "all_categories": all_categories
-            }
-            non_empty_masters_cache_time = current_time
-            
-            logger.info(f"Все категории мастеров при возврате: {list(all_categories.keys())}")
         
         # Удаляем сообщение о загрузке
         await loading_message.delete()
@@ -1891,19 +1953,35 @@ async def keyboard_back_to_master(message: types.Message, state: FSMContext):
     
     # Получаем фотографии мастера по категории
     album_id = None
-    # Попробуем получить альбом через кэш категорий
+    master_photos = []
+    
+    # Сначала проверяем, есть ли фотографии в кэше
     global non_empty_masters_cache
-    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
-        album_id = non_empty_masters_cache["all_categories"].get(category)
-    
-    if not album_id:
-        # Если не получилось, просто возвращаемся к категориям
-        await back_to_master_categories(message, state)
-        return
-    
-    # Получаем фото мастера
-    await vk_api_rate_limit()
-    master_photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)
+    if non_empty_masters_cache and "master_photos" in non_empty_masters_cache and category in non_empty_masters_cache["master_photos"]:
+        master_photos = non_empty_masters_cache["master_photos"][category]
+        logger.info(f"Использую кэшированные фотографии мастеров для категории '{category}'")
+    else:
+        # Если нет, пробуем получить альбом через кэш категорий
+        if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
+            album_id = non_empty_masters_cache["all_categories"].get(category)
+        
+        if not album_id:
+            # Если не получилось, просто возвращаемся к категориям
+            await back_to_master_categories(message, state)
+            return
+        
+        # Получаем фото мастера
+        await vk_api_rate_limit()
+        master_photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)
+        
+        # Сохраняем в кэш
+        if master_photos and len(master_photos) > 0:
+            if not non_empty_masters_cache:
+                non_empty_masters_cache = {}
+            if "master_photos" not in non_empty_masters_cache:
+                non_empty_masters_cache["master_photos"] = {}
+            non_empty_masters_cache["master_photos"][category] = master_photos
+            logger.info(f"Сохранил {len(master_photos)} фотографий мастеров в кэш для категории '{category}'")
     
     # Очищаем все данные состояния
     await state.finish()
