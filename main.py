@@ -631,17 +631,19 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         # Логируем количество найденных работ
         logger.info(f"Найдено {len(work_photos)} работ мастера для фото ID: {photo_id}")
         
-        # Сохраняем фотографии работ и индекс текущей фотографии в состоянии
-        await state.update_data(
-            master_work_photos=work_photos,
-            current_work_index=0
-        )
-        
         # Удаляем предыдущее сообщение с фото мастера
         await callback_query.message.delete()
         
         # Переходим в состояние просмотра работ мастера
         await User.view_master_works.set()
+        
+        # Очищаем предыдущие данные состояния и сохраняем только необходимые данные
+        # Сохраняем только данные о работах мастера, категории и текущем индексе
+        await state.update_data(
+            master_work_photos=work_photos,
+            current_work_index=0,
+            current_master_category=category
+        )
         
         # Отправляем первую фотографию работы
         await send_master_work_photo(callback_query.message.chat.id, state)
@@ -664,6 +666,7 @@ async def work_next_callback(callback_query: types.CallbackQuery, state: FSMCont
     # Увеличиваем индекс, если не последняя фотография
     if current_index < len(photos) - 1:
         current_index += 1
+        # Обновляем только индекс текущей работы, не трогая остальные данные
         await state.update_data(current_work_index=current_index)
     
     # Удаляем предыдущее сообщение
@@ -685,6 +688,7 @@ async def work_prev_callback(callback_query: types.CallbackQuery, state: FSMCont
     # Уменьшаем индекс, если не первая фотография
     if current_index > 0:
         current_index -= 1
+        # Обновляем только индекс текущей работы, не трогая остальные данные
         await state.update_data(current_work_index=current_index)
     
     # Удаляем предыдущее сообщение
@@ -704,11 +708,42 @@ async def work_count_callback(callback_query: types.CallbackQuery):
 # Обработчик нажатия кнопки "Вернуться к анкете мастера" в карусели работ
 @dp.callback_query_handler(lambda c: c.data == "back_to_master", state=User.view_master_works)
 async def back_to_master_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем необходимые данные из текущего состояния
+    data = await state.get_data()
+    category = data.get('current_master_category', 'Мастера')
+    
     # Удаляем предыдущее сообщение
     await callback_query.message.delete()
     
+    # Получаем фотографии мастера по категории
+    album_id = None
+    # Попробуем получить альбом через кэш категорий
+    global non_empty_masters_cache
+    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
+        album_id = non_empty_masters_cache["all_categories"].get(category)
+    
+    if not album_id:
+        # Если не получилось, просто возвращаемся к категориям
+        await back_to_master_categories(callback_query.message, state)
+        await callback_query.answer()
+        return
+    
+    # Получаем фото мастера
+    await vk_api_rate_limit()
+    master_photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)
+    
+    # Очищаем все данные состояния
+    await state.finish()
+    
     # Переходим обратно в состояние просмотра карусели мастеров
     await User.view_masters_carousel.set()
+    
+    # Сохраняем только необходимые данные для просмотра анкеты мастера
+    await state.update_data(
+        current_master_category=category,
+        master_photos=master_photos,
+        current_photo_index=0
+    )
     
     # Отправляем фото мастера
     await send_master_photo(callback_query.message.chat.id, state)
@@ -1831,8 +1866,38 @@ async def master_back_to_categories_callback(callback_query: types.CallbackQuery
 # Обработчик для кнопки "Вернуться к анкете мастера" в клавиатуре
 @dp.message_handler(lambda m: m.text == "◀️ Вернуться к анкете мастера", state=User.view_master_works)
 async def keyboard_back_to_master(message: types.Message, state: FSMContext):
+    # Получаем необходимые данные из текущего состояния
+    data = await state.get_data()
+    category = data.get('current_master_category', 'Мастера')
+    
+    # Получаем фотографии мастера по категории
+    album_id = None
+    # Попробуем получить альбом через кэш категорий
+    global non_empty_masters_cache
+    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
+        album_id = non_empty_masters_cache["all_categories"].get(category)
+    
+    if not album_id:
+        # Если не получилось, просто возвращаемся к категориям
+        await back_to_master_categories(message, state)
+        return
+    
+    # Получаем фото мастера
+    await vk_api_rate_limit()
+    master_photos = await get_album_photos_async(config.VK_TOKEN, config.VK_GROUP_ID, album_id)
+    
+    # Очищаем все данные состояния
+    await state.finish()
+    
     # Переходим обратно в состояние просмотра карусели мастеров
     await User.view_masters_carousel.set()
+    
+    # Сохраняем только необходимые данные для просмотра анкеты мастера
+    await state.update_data(
+        current_master_category=category,
+        master_photos=master_photos,
+        current_photo_index=0
+    )
     
     # Отправляем фото мастера
     await send_master_photo(message.chat.id, state)
