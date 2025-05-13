@@ -1,3 +1,4 @@
+psutil==6.0.0
 aiogram==2.25.1
 vk_api==11.9.9
 python-dotenv==1.0.0
