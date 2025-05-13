@@ -328,14 +328,14 @@ def masters_carousel_keyboard():
 # Создание клавиатуры с кнопками навигации для просмотра работ мастера
 def master_works_keyboard():
     """
-    Создает клавиатуру с кнопками навигации для просмотра работ мастера
+    Создает клавиатуру только с кнопками навигации по иерархии для просмотра работ мастера
     :return: ReplyKeyboardMarkup
     """
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.row(
-        KeyboardButton('◀️ Вернуться к анкете мастера'),
-        KeyboardButton('◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️')
-    )
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    # Добавляем кнопку возврата к анкете мастера
+    kb.add(KeyboardButton('◀️ Вернуться к анкете мастера'))
+    # Добавляем кнопку возврата к категориям мастеров
+    kb.add(KeyboardButton('◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️'))
     return kb
 
 """from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Keyboard
