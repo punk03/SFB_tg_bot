@@ -380,6 +380,19 @@ async def show_master(message: types.Message, state: FSMContext):
                         found_category = key
                         logger.info(f"Найдено совпадение с оригинальным текстом без эмодзи: '{key}'")
                         break
+                        
+            # Если до сих пор не нашли совпадение, проверяем, не осталось ли в категории другого текста-суффикса
+            if not found_category:
+                # Дополнительная проверка для различных вариантов суффиксов
+                for suffix in [" мастера", " и спецтехника", " услуги"]:
+                    test_category = category
+                    if test_category.endswith(suffix):
+                        test_category = test_category[:-len(suffix)]
+                    
+                    if clean_key.lower() == test_category.lower():
+                        found_category = key
+                        logger.info(f"Найдено совпадение после удаления суффикса: '{key}'")
+                        break
     
     # Если категория не найдена
     if not found_category:
@@ -943,7 +956,7 @@ async def masters_sfb_handler(message, state: FSMContext):
     logger.info(f"Категории кнопок: {[cat for cat, _ in category_buttons]}")
     logger.info(f"Категории данных: {list(all_categories.keys())}")
         
-    kb = buttons.generator(category_buttons)
+    kb = buttons.generator(category_buttons, hide_counts=True)
     await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
                         parse_mode=ParseMode.HTML,
                         reply_markup=kb)
@@ -1786,7 +1799,7 @@ async def back_to_master_categories(message: types.Message, state: FSMContext):
             return
         
         # Создаем клавиатуру заново
-        kb = buttons.generator(category_buttons)
+        kb = buttons.generator(category_buttons, hide_counts=True)
         await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
                             parse_mode=ParseMode.HTML,
                             reply_markup=kb)

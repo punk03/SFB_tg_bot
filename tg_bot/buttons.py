@@ -91,7 +91,7 @@ def sort_buttons(buttons_list):
     # Возвращаем отсортированный список
     return sorted(buttons_list, key=get_sort_key)
 
-def generator(buttons_list, row_width=2, force_single_column=False, preserve_emoji=False, sort_alphabetically=True):
+def generator(buttons_list, row_width=2, force_single_column=False, preserve_emoji=False, sort_alphabetically=True, hide_counts=False):
     """
     Создает красивую клавиатуру с кнопками и кнопкой "Назад" вверху и внизу
     :param buttons_list: список названий кнопок или кортежей (название, количество)
@@ -99,6 +99,7 @@ def generator(buttons_list, row_width=2, force_single_column=False, preserve_emo
     :param force_single_column: принудительно размещать кнопки в одну колонку
     :param preserve_emoji: не добавлять эмодзи к кнопкам, если они уже есть в названии
     :param sort_alphabetically: сортировать ли кнопки по алфавиту
+    :param hide_counts: скрывать ли счетчики количества мастеров [N]
     :return: ReplyKeyboardMarkup
     """
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=row_width)
@@ -138,10 +139,10 @@ def generator(buttons_list, row_width=2, force_single_column=False, preserve_emo
                     button_name = button_name.replace(emoji, "", 1).strip()
             
             # Для мастеров добавляем счетчик, для магазинов - нет
-            if is_masters_list or not is_shops_list:
+            if (is_masters_list or not is_shops_list) and not hide_counts:
                 button_text = f"{button_name} [{count}]"
             else:
-                # Для магазинов не добавляем счетчик
+                # Для магазинов или если скрыты счетчики не добавляем счетчик
                 button_text = f"{button_name}"
                 
             kb.add(KeyboardButton(button_text))
