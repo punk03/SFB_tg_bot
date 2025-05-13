@@ -487,9 +487,6 @@ async def send_master_photo(chat_id, state):
     # Добавляем кнопку возврата к категориям мастеров
     kb.add(InlineKeyboardButton("◀️ Вернуться к категориям", callback_data="master_back_to_categories"))
     
-    # Используем новую клавиатуру только с кнопкой возврата к категориям мастеров
-    reply_markup = buttons.masters_carousel_keyboard()
-    
     try:
         # Проверяем длину подписи
         if len(full_caption) <= 1024:
@@ -627,7 +624,7 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         if not work_photos or len(work_photos) == 0:
             await callback_query.message.answer(
                 "⚠️ У этого мастера пока нет фотографий работ.",
-                reply_markup=buttons.masters_carousel_keyboard()
+                reply_markup=None
             )
             return
         
@@ -653,7 +650,7 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         await loading_message.delete()
         await callback_query.message.answer(
             f"⚠️ Произошла ошибка при загрузке работ мастера: {str(e)}",
-            reply_markup=buttons.masters_carousel_keyboard()
+            reply_markup=None
         )
 
 # Обработчик нажатия кнопки "Далее" в карусели работ мастера
