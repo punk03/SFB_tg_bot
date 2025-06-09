@@ -2558,8 +2558,8 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         logger.info(f"Найдено {len(work_photos)} работ мастера для фото ID: {photo_id}")
         
         # Удаляем предыдущее сообщение с фото мастера
-    await callback_query.message.delete()
-    
+        await callback_query.message.delete()
+        
         # Полностью очищаем предыдущее состояние
         await state.finish()
         
@@ -2581,8 +2581,7 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         await callback_query.message.answer(
             f"⚠️ Произошла ошибка при загрузке работ мастера: {str(e)}",
             reply_markup=None
-        )
-
+        ) 
 # Обработчик для кнопки "Главное меню" в inline-клавиатуре
 @dp.callback_query_handler(lambda c: c.data == "main_menu", state="*")
 async def main_menu_callback(callback_query: types.CallbackQuery, state: FSMContext):
