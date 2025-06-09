@@ -1898,66 +1898,38 @@ async def on_shutdown(dp):
     # Освобождаем блокировку
     release_lock()
 
-# Обработчик для возврата к категориям мастеров (с новым именем кнопки)
-@dp.message_handler(lambda m: m.text == "◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️", state="*")
-async def back_to_master_categories(message: types.Message, state: FSMContext):
-    # Пишем в лог для отладки
-    logger.info(f"Обработка возврата к категориям мастеров с новой кнопкой: '{message.text}'")
+# Обработчик для возврата к категориям мастеров (обработчик callback_query)
+@dp.callback_query_handler(lambda c: c.data == "back_to_master_categories", state=[User.select_master, User.view_master])
+async def back_to_master_categories_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Отвечаем на callback
+    await bot.answer_callback_query(callback_query.id, "Возвращаемся к категориям мастеров...")
     
-    try:
-        # Полностью очищаем текущее состояние
-        await state.finish()
-        
-        # Показываем пользователю сообщение о загрузке
-        loading_message = await message.answer("🔄 <b>Загружаю категории мастеров...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
-        
-        global non_empty_masters_cache, non_empty_masters_cache_time
-        current_time = time.time()
-        
-        # Проверяем, есть ли актуальный кэш непустых категорий
-        if non_empty_masters_cache and current_time - non_empty_masters_cache_time < config.CACHE_TIME:
-            logger.info("Используем кэш категорий мастеров при возврате")
-            category_buttons = non_empty_masters_cache.get("buttons", [])
-            all_categories = non_empty_masters_cache.get("all_categories", {})
-        else:
-            # Если кэш отсутствует или устарел, запускаем полную предзагрузку
-            logger.info("Кэш отсутствует или устарел, запускаем предзагрузку")
-            await preload_masters_data()
-            
-            # Повторно проверяем наличие данных после загрузки
-            if non_empty_masters_cache:
-                category_buttons = non_empty_masters_cache.get("buttons", [])
-                all_categories = non_empty_masters_cache.get("all_categories", {})
-            else:
-                await loading_message.delete()
-                await message.answer("⚠️ Не удалось загрузить категории мастеров. Пожалуйста, попробуйте позже.",
-                              reply_markup=buttons.go_back())
-                return
-        
-        # Удаляем сообщение о загрузке
-        await loading_message.delete()
-        
-        if not category_buttons:
-            await message.answer("⚠️ Нет ни одной категории мастеров.", reply_markup=buttons.go_back())
-            return
-        
-        # Создаем клавиатуру заново
-        kb = buttons.generator(category_buttons)
-        await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=kb)
-        
-        # Устанавливаем состояние и сохраняем данные
-        await User.get_master.set()
-        await state.set_data(all_categories)
-        
-        logger.info("Успешно выполнен возврат к категориям мастеров")
+    global non_empty_masters_cache
     
-    except Exception as e:
-        logger.error(f"Ошибка при возврате к категориям мастеров: {e}")
-        await message.answer("⚠️ Произошла ошибка. Пожалуйста, попробуйте еще раз или вернитесь в главное меню.",
-                          reply_markup=buttons.main)
-        await state.finish()
+    # Создаем клавиатуру с категориями
+    kb = InlineKeyboardMarkup()
+    
+    # Добавляем категории мастеров в клавиатуру
+    if non_empty_masters_cache and "buttons" in non_empty_masters_cache:
+        for cat_name, count in non_empty_masters_cache["buttons"]:
+            # Если в категории есть мастера, добавляем кнопку
+            if count > 0:
+                button_text = f"{cat_name} ({count})"
+                kb.add(InlineKeyboardButton(button_text, callback_data=f"master_cat:{cat_name}"))
+    
+    # Добавляем кнопку для возврата в главное меню
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отображаем категории
+    await bot.edit_message_text(
+        chat_id=callback_query.message.chat.id,
+        message_id=callback_query.message.message_id,
+        text='👨‍🔧 <b>Наши мастера</b>\n\nВыберите категорию мастеров:',
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    
+    await User.select_master_category.set()
 
 # Обработчик нажатия кнопки "Далее" в карусели мастеров
 @dp.callback_query_handler(lambda c: c.data == "master_next", state=User.view_masters_carousel)
@@ -2016,7 +1988,8 @@ async def master_back_to_categories_callback(callback_query: types.CallbackQuery
     await callback_query.message.delete()
     
     # Вызываем функцию возврата к категориям мастеров
-    await back_to_master_categories(callback_query.message, state)
+    # Используем обработчик сообщений вместо callback
+    await back_to_master_categories_handler(callback_query.message, state)
     
     # Отвечаем на callback, чтобы убрать часики на кнопке
     await callback_query.answer()
@@ -2044,7 +2017,7 @@ async def keyboard_back_to_master(message: types.Message, state: FSMContext):
         
         if not album_id:
             # Если не получилось, просто возвращаемся к категориям
-            await back_to_master_categories(message, state)
+            await back_to_master_categories_handler(message, state)
             return
         
         # Получаем фото мастера
@@ -2080,7 +2053,7 @@ async def keyboard_back_to_master(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda m: m.text == "◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️", state=User.view_master_works)
 async def keyboard_back_to_categories_from_works(message: types.Message, state: FSMContext):
     # Вызываем функцию возврата к категориям мастеров
-    await back_to_master_categories(message, state)
+    await back_to_master_categories_handler(message, state)
 
 # Обработчик для просмотра списка мастеров
 @dp.message_handler(lambda m: m.text == "👨‍🔧 Каталог мастеров")
@@ -2469,40 +2442,68 @@ def get_back_to_masters_keyboard():
     kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
     return kb
 
-# Обработчик для возврата к категориям мастеров
-@dp.callback_query_handler(lambda c: c.data == "back_to_master_categories", state=[User.select_master, User.view_master])
-async def back_to_master_categories(callback_query: types.CallbackQuery, state: FSMContext):
-    # Отвечаем на callback
-    await bot.answer_callback_query(callback_query.id, "Возвращаемся к категориям мастеров...")
+# Обработчик для возврата к категориям мастеров (обработчик сообщений)
+@dp.message_handler(lambda m: m.text == "◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️", state="*")
+async def back_to_master_categories_handler(message: types.Message, state: FSMContext):
+    # Пишем в лог для отладки
+    logger.info(f"Обработка возврата к категориям мастеров с кнопкой: '{message.text}'")
     
-    global non_empty_masters_cache
+    try:
+        # Полностью очищаем текущее состояние
+        await state.finish()
+        
+        # Показываем пользователю сообщение о загрузке
+        loading_message = await message.answer("🔄 <b>Загружаю категории мастеров...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
+        
+        global non_empty_masters_cache, non_empty_masters_cache_time
+        current_time = time.time()
+        
+        # Проверяем, есть ли актуальный кэш непустых категорий
+        if non_empty_masters_cache and current_time - non_empty_masters_cache_time < config.CACHE_TIME:
+            logger.info("Используем кэш категорий мастеров при возврате")
+            category_buttons = non_empty_masters_cache.get("buttons", [])
+            all_categories = non_empty_masters_cache.get("all_categories", {})
+        else:
+            # Если кэш отсутствует или устарел, запускаем полную предзагрузку
+            logger.info("Кэш отсутствует или устарел, запускаем предзагрузку")
+            await preload_masters_data()
+            
+            # Повторно проверяем наличие данных после загрузки
+            if non_empty_masters_cache:
+                category_buttons = non_empty_masters_cache.get("buttons", [])
+                all_categories = non_empty_masters_cache.get("all_categories", {})
+            else:
+                await loading_message.delete()
+                await message.answer("⚠️ Не удалось загрузить категории мастеров. Пожалуйста, попробуйте позже.",
+                              reply_markup=buttons.go_back())
+                return
+        
+        # Удаляем сообщение о загрузке
+        await loading_message.delete()
+        
+        if not category_buttons:
+            await message.answer("⚠️ Нет ни одной категории мастеров.", reply_markup=buttons.go_back())
+            return
+        
+        # Создаем клавиатуру заново
+        kb = buttons.generator(category_buttons)
+        await message.answer('👷‍♂️ <b>Открытая база мастеров и спецтехники</b>\n\nВыберите категорию из списка:', 
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=kb)
+        
+        # Устанавливаем состояние и сохраняем данные
+        await User.get_master.set()
+        await state.set_data(all_categories)
+        
+        logger.info("Успешно выполнен возврат к категориям мастеров")
     
-    # Создаем клавиатуру с категориями
-    kb = InlineKeyboardMarkup()
-    
-    # Добавляем категории мастеров в клавиатуру
-    if non_empty_masters_cache and "buttons" in non_empty_masters_cache:
-        for cat_name, count in non_empty_masters_cache["buttons"]:
-            # Если в категории есть мастера, добавляем кнопку
-            if count > 0:
-                button_text = f"{cat_name} ({count})"
-                kb.add(InlineKeyboardButton(button_text, callback_data=f"master_cat:{cat_name}"))
-    
-    # Добавляем кнопку для возврата в главное меню
-    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
-    
-    # Отображаем категории
-    await bot.edit_message_text(
-        chat_id=callback_query.message.chat.id,
-        message_id=callback_query.message.message_id,
-        text='👨‍🔧 <b>Наши мастера</b>\n\nВыберите категорию мастеров:',
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
-    )
-    
-    await User.select_master_category.set()
+    except Exception as e:
+        logger.error(f"Ошибка при возврате к категориям мастеров: {e}")
+        await message.answer("⚠️ Произошла ошибка. Пожалуйста, попробуйте еще раз или вернитесь в главное меню.",
+                          reply_markup=buttons.main)
+        await state.finish()
 
-# Обработчик нажатия кнопки "Посмотреть работы мастера"
+# Обработчик для кнопки "Посмотреть работы мастера"
 @dp.callback_query_handler(lambda c: c.data.startswith("master_works_"), state=User.view_masters_carousel)
 async def master_works_callback(callback_query: types.CallbackQuery, state: FSMContext):
     # Извлекаем ID фотографии из callback_data
