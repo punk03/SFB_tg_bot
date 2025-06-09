@@ -576,11 +576,11 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
                 reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
             )
         else:
-        await bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="⚠️ Фотографии не найдены.",
-            reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
-        )
+                reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
+            )
         return
     
     # Получаем текущую фотографию
@@ -658,28 +658,28 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
                     parse_mode=ParseMode.HTML
                 )
         else:
-        # Проверяем длину подписи
-        if len(full_caption) <= 1024:
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo['url'],
-                caption=full_caption,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb
-            )
-        else:
-            # Если подпись слишком длинная, отправляем фото и текст отдельно
-            logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo['url'],
-                reply_markup=kb
-            )
-            await bot.send_message(
-                chat_id=chat_id,
-                text=full_caption,
-                parse_mode=ParseMode.HTML
-            )
+            # Проверяем длину подписи
+            if len(full_caption) <= 1024:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    caption=full_caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+            else:
+                # Если подпись слишком длинная, отправляем фото и текст отдельно
+                logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    reply_markup=kb
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=full_caption,
+                    parse_mode=ParseMode.HTML
+                )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке/редактировании фото мастера: {error_msg}")
@@ -703,12 +703,12 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
                     reply_markup=kb
                 )
         else:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb
-        )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
 
 # Функция для отправки фотографии работ мастера с кнопками навигации
 async def send_master_work_photo(chat_id, state, edit_message_id=None):
@@ -731,11 +731,11 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
                 reply_markup=inline_kb
             )
         else:
-        await bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="⚠️ Фотографии работ не найдены.",
-            reply_markup=inline_kb
-        )
+                reply_markup=inline_kb
+            )
         return
     
     # Получаем текущую фотографию
@@ -800,28 +800,28 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
                     parse_mode=ParseMode.HTML
                 )
         else:
-        # Отправляем фото с подписью и с кнопками
-        if len(full_caption) <= 1024:
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo['url'],
-                caption=full_caption,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb
-            )
-        else:
-            # Если подпись слишком длинная, отправляем фото и текст отдельно
-            logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo['url'],
-                reply_markup=kb
-            )
-            await bot.send_message(
-                chat_id=chat_id,
-                text=full_caption,
-                parse_mode=ParseMode.HTML
-            )
+            # Отправляем фото с подписью и с кнопками
+            if len(full_caption) <= 1024:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    caption=full_caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+            else:
+                # Если подпись слишком длинная, отправляем фото и текст отдельно
+                logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    reply_markup=kb
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=full_caption,
+                    parse_mode=ParseMode.HTML
+                )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке/редактировании фото работы мастера: {error_msg}")
@@ -838,12 +838,12 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
             except Exception as inner_e:
                 logger.error(f"Ошибка при отправке текста ошибки: {inner_e}")
                 # Если не удалось отредактировать, отправляем новое сообщение
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
-                         parse_mode=ParseMode.HTML,
-            reply_markup=kb
-        )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+            )
         else:
             # Отправляем новое сообщение с текстом ошибки
             await bot.send_message(
@@ -851,7 +851,7 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
                 text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb
-        )
+            )
 
 # Обработчик нажатия кнопки "Далее" в карусели работ мастера
 @dp.callback_query_handler(lambda c: c.data == "work_next", state=User.view_master_works)
