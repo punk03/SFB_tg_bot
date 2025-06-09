@@ -123,7 +123,7 @@ bot = Bot(token=config.TG_BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# Кэш для хранения данных
+# Добавляем кэш для хранения данных
 cache = {}
 
 # Добавляем кэш для непустых категорий мастеров
@@ -133,6 +133,9 @@ non_empty_masters_cache_time = 0
 # Добавляем кэш для магазинов
 shops_categories_cache = {}
 shops_categories_cache_time = 0
+
+# Интервал обновления кэша в секундах (2 часа)
+CACHE_UPDATE_INTERVAL = 7200
 
 # Добавляем лимитер запросов к ВК API
 vk_api_semaphore = asyncio.Semaphore(config.API_RATE_LIMIT)  # Используем лимит из конфига
@@ -180,6 +183,31 @@ async def periodic_cache_cleanup():
         process = psutil.Process(os.getpid())
         memory_usage = process.memory_info().rss / 1024 / 1024  # В МБ
         logger.info(f"Текущее использование памяти: {memory_usage:.2f} МБ")
+
+# Периодическое обновление кэша каждые 2 часа
+async def periodic_cache_update():
+    """Периодически обновляет кэш магазинов и мастеров"""
+    while True:
+        try:
+            logger.info("Запуск планового обновления кэша (каждые 2 часа)")
+            
+            # Обновляем данные о мастерах
+            await preload_masters_data()
+            logger.info("✅ Кэш мастеров успешно обновлен")
+            
+            # Обновляем данные о магазинах
+            shops = await get_shop_list_async(config.VK_TOKEN, config.VK_GROUP_ID, force_update=True)
+            global shops_categories_cache, shops_categories_cache_time
+            shops_categories_cache = shops
+            shops_categories_cache_time = time.time()
+            logger.info("✅ Кэш магазинов успешно обновлен")
+            
+            # Ждем следующего обновления
+            await asyncio.sleep(CACHE_UPDATE_INTERVAL)
+        except Exception as e:
+            logger.error(f"Ошибка при плановом обновлении кэша: {e}")
+            # В случае ошибки пробуем снова через 10 минут
+            await asyncio.sleep(600)
 
 # Функция для оптимизированной загрузки данных
 async def preload_critical_data():
@@ -277,7 +305,7 @@ async def preload_masters_data():
         
         execution_time = time.time() - start_time
         logger.info(f"✅ Предзагрузка базы мастеров завершена за {execution_time:.2f} сек")
-        logger.info(f"✅ Всего загружено {len(all_categories)} категорий, {sum(len(photos) for photos in all_master_photos.values())} мастеров и {sum(len(works) for works in master_works.values())} мастеров с работами")
+        logger.info(f"✅ Всего загружено {len(all_categories)} категорий, {sum(len(photos) for photos in all_master_photos.values())} мастеров и {sum(len(cat_works) for cat, cat_works in master_works.items())} мастеров с работами")
         
     except Exception as e:
         logger.error(f"Ошибка при загрузке базы мастеров: {e}")
@@ -1085,20 +1113,19 @@ async def partners_stores_handler(message, state: FSMContext):
     loading_message = await message.answer("🔄 <b>Загружаю категории магазинов...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
     
     global shops_categories_cache, shops_categories_cache_time
-    current_time = time.time()
     
-    # Проверяем, есть ли актуальный кэш категорий магазинов
-    if shops_categories_cache and current_time - shops_categories_cache_time < config.CACHE_TIME:
-        logger.info("Используем кэш категорий магазинов")
-        shop_categories = shops_categories_cache
-    else:
-        # Если кэш устарел, обновляем данные
-        logger.info("Обновляем кэш категорий магазинов")
+    # Проверяем, есть ли данные в кэше
+    if not shops_categories_cache:
+        # Если кэша нет, запускаем загрузку
+        logger.info("Кэш магазинов пуст, загружаем данные")
         shop_categories = await get_shop_list_async(config.VK_TOKEN, config.VK_GROUP_ID)
         
         # Сохраняем результаты в кэш
         shops_categories_cache = shop_categories
-        shops_categories_cache_time = current_time
+        shops_categories_cache_time = time.time()
+    else:
+        logger.info("Используем существующий кэш категорий магазинов")
+        shop_categories = shops_categories_cache
     
     # Удаляем сообщение о загрузке
     await loading_message.delete()
@@ -1809,6 +1836,9 @@ async def on_startup(dp):
     # Запускаем таймер очистки кэша
     asyncio.create_task(periodic_cache_cleanup())
     
+    # Запускаем таймер периодического обновления кэша
+    asyncio.create_task(periodic_cache_update())
+    
     # Предварительная загрузка критически важных данных
     await preload_critical_data()
     
@@ -2016,6 +2046,426 @@ async def master_works_back_to_categories_callback(callback_query: types.Callbac
     
     # Отвечаем на callback, чтобы убрать часики на кнопке
     await callback_query.answer()
+
+# Обработчик для просмотра списка мастеров
+@dp.message_handler(lambda m: m.text == "👨‍🔧 Каталог мастеров")
+async def masters_handler(message: types.Message, state: FSMContext):
+    # Показываем пользователю сообщение о загрузке
+    loading_message = await message.answer("🔄 <b>Загружаю категории мастеров...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
+    
+    global non_empty_masters_cache, non_empty_masters_cache_time
+    
+    # Проверяем, есть ли данные в кэше
+    if not non_empty_masters_cache or not non_empty_masters_cache.get("buttons"):
+        # Если кэша нет, запускаем загрузку
+        logger.info("Кэш мастеров пуст, загружаем данные")
+        await preload_masters_data()
+    else:
+        logger.info("Используем существующий кэш мастеров")
+    
+    # Удаляем сообщение о загрузке
+    await loading_message.delete()
+    
+    # Создаем клавиатуру с категориями
+    kb = InlineKeyboardMarkup()
+    
+    # Добавляем категории мастеров в клавиатуру
+    if non_empty_masters_cache and "buttons" in non_empty_masters_cache:
+        for cat_name, count in non_empty_masters_cache["buttons"]:
+            # Если в категории есть мастера, добавляем кнопку
+            if count > 0:
+                button_text = f"{cat_name} ({count})"
+                kb.add(InlineKeyboardButton(button_text, callback_data=f"master_cat:{cat_name}"))
+    
+    # Добавляем кнопку для возврата в главное меню
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    await message.answer('👨‍🔧 <b>Наши мастера</b>\n\nВыберите категорию мастеров:', 
+                       parse_mode=ParseMode.HTML,
+                       reply_markup=kb)
+    
+    # Сохраняем категории мастеров в состоянии пользователя
+    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
+        await state.update_data(master_categories=non_empty_masters_cache["all_categories"])
+    
+    await User.select_master_category.set()
+
+# Обработчик для просмотра мастеров по категории
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('master_cat:'), state=User.select_master_category)
+async def process_master_category(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем название выбранной категории
+    category_name = callback_query.data.split(':')[1]
+    
+    # Показываем статус загрузки
+    await bot.answer_callback_query(callback_query.id, "Загружаю мастеров...")
+    await bot.edit_message_text(
+        chat_id=callback_query.message.chat.id, 
+        message_id=callback_query.message.message_id,
+        text=f"🔄 <b>Загружаю мастеров категории:</b> {category_name}...\n\nПожалуйста, подождите.",
+        parse_mode=ParseMode.HTML
+    )
+    
+    global non_empty_masters_cache
+    
+    # Получаем информацию о мастерах из кэша
+    master_photos = non_empty_masters_cache.get("master_photos", {}).get(category_name, [])
+    
+    if not master_photos:
+        await bot.edit_message_text(
+            chat_id=callback_query.message.chat.id, 
+            message_id=callback_query.message.message_id,
+            text=f"❌ <b>Мастера не найдены в категории:</b> {category_name}\n\nПожалуйста, выберите другую категорию или вернитесь в главное меню.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_to_masters_keyboard()
+        )
+        return
+    
+    # Сохраняем выбранную категорию и мастеров в состоянии
+    await state.update_data(current_category=category_name, masters=master_photos)
+    
+    # Создаем клавиатуру с мастерами
+    kb = InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем мастеров
+    for i, photo in enumerate(master_photos):
+        master_name = photo.get('text', f'Мастер #{i+1}')
+        # Ограничиваем имя мастера 30 символами
+        if len(master_name) > 30:
+            master_name = master_name[:27] + "..."
+        kb.add(InlineKeyboardButton(master_name, callback_data=f"master:{i}"))
+    
+    # Добавляем кнопку назад
+    kb.add(InlineKeyboardButton("◀️ Назад к категориям", callback_data="back_to_master_categories"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отображаем список мастеров
+    await bot.edit_message_text(
+        chat_id=callback_query.message.chat.id, 
+        message_id=callback_query.message.message_id,
+        text=f"👨‍🔧 <b>Мастера категории:</b> {category_name}\n\nВыберите мастера для просмотра информации:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    
+    await User.select_master.set()
+
+# Обработчик для просмотра информации о мастере
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('master:'), state=User.select_master)
+async def process_master_selection(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем индекс выбранного мастера
+    master_index = int(callback_query.data.split(':')[1])
+    
+    # Показываем статус загрузки
+    await bot.answer_callback_query(callback_query.id, "Загружаю информацию о мастере...")
+    
+    # Получаем данные из состояния
+    data = await state.get_data()
+    category_name = data.get('current_category')
+    masters = data.get('masters', [])
+    
+    if not masters or master_index >= len(masters):
+        await bot.edit_message_text(
+            chat_id=callback_query.message.chat.id,
+            message_id=callback_query.message.message_id,
+            text="❌ <b>Информация о мастере не найдена</b>\n\nПожалуйста, вернитесь к списку мастеров.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_to_masters_keyboard()
+        )
+        return
+    
+    # Получаем информацию о выбранном мастере
+    master = masters[master_index]
+    master_name = master.get('text', f'Мастер #{master_index+1}')
+    master_photo_url = master.get('url')
+    master_id = master.get('id')
+    
+    # Получаем работы мастера из кэша
+    global non_empty_masters_cache
+    master_works = []
+    if "master_works" in non_empty_masters_cache and category_name in non_empty_masters_cache["master_works"]:
+        category_works = non_empty_masters_cache["master_works"][category_name]
+        if master_id in category_works:
+            master_works = category_works[master_id]
+    
+    # Сохраняем информацию о мастере и его работах в состоянии
+    await state.update_data(master_info=master, master_works=master_works)
+    
+    # Формируем текст сообщения
+    message_text = f"👨‍🔧 <b>{master_name}</b>\n\n"
+    
+    # Добавляем информацию о работах мастера
+    if master_works:
+        message_text += "<b>Работы мастера:</b>\n"
+        for i, work in enumerate(master_works[:5]):  # Показываем до 5 работ
+            work_text = work.get('text', '').strip()
+            if work_text:
+                message_text += f"\n{i+1}. {work_text}"
+        
+        # Если работ больше 5, добавляем сообщение
+        if len(master_works) > 5:
+            message_text += f"\n\n<i>И ещё {len(master_works) - 5} работ</i>"
+    else:
+        message_text += "<i>У этого мастера пока нет добавленных работ в нашей базе.</i>"
+    
+    # Создаем клавиатуру с кнопками
+    kb = InlineKeyboardMarkup()
+    
+    # Добавляем кнопку для просмотра всех работ, если они есть
+    if master_works:
+        kb.add(InlineKeyboardButton("📷 Просмотреть все работы мастера", callback_data=f"master_works:{master_index}"))
+    
+    # Добавляем кнопки для навигации
+    kb.add(InlineKeyboardButton("📞 Связаться с мастером", callback_data=f"contact_master:{master_index}"))
+    kb.add(InlineKeyboardButton("◀️ Вернуться к списку мастеров", callback_data="back_to_masters"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отображаем информацию о мастере
+    try:
+        if master_photo_url:
+            # Если есть фото мастера, отправляем его с подписью
+            await bot.send_photo(
+                chat_id=callback_query.message.chat.id,
+                photo=master_photo_url,
+                caption=message_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+            # Удаляем предыдущее сообщение
+            await bot.delete_message(
+                chat_id=callback_query.message.chat.id,
+                message_id=callback_query.message.message_id
+            )
+        else:
+            # Если фото нет, просто обновляем текст сообщения
+            await bot.edit_message_text(
+                chat_id=callback_query.message.chat.id,
+                message_id=callback_query.message.message_id,
+                text=message_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке информации о мастере: {e}")
+        # В случае ошибки просто обновляем текст сообщения
+        await bot.edit_message_text(
+            chat_id=callback_query.message.chat.id,
+            message_id=callback_query.message.message_id,
+            text=f"{message_text}\n\n⚠️ <i>Не удалось загрузить фото мастера</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+    
+    await User.view_master.set()
+
+# Обработчик для просмотра всех работ мастера
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('master_works:'), state=User.view_master)
+async def process_master_works(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    master_works = data.get('master_works', [])
+    master_info = data.get('master_info', {})
+    
+    # Получаем имя мастера
+    master_name = master_info.get('text', 'Мастер')
+    
+    if not master_works:
+        await bot.answer_callback_query(callback_query.id, "У этого мастера нет загруженных работ")
+        return
+    
+    # Показываем статус загрузки
+    await bot.answer_callback_query(callback_query.id, "Загружаю работы мастера...")
+    
+    # Формируем сообщение с работами мастера
+    message_text = f"📷 <b>Все работы мастера:</b> {master_name}\n\n"
+    
+    # Добавляем информацию о каждой работе
+    for i, work in enumerate(master_works):
+        work_text = work.get('text', '').strip()
+        if work_text:
+            message_text += f"{i+1}. {work_text}\n\n"
+    
+    # Добавляем кнопку возврата
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("◀️ Вернуться к информации о мастере", callback_data=f"back_to_master_info"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отправляем сообщение с работами
+    await bot.edit_message_text(
+        chat_id=callback_query.message.chat.id,
+        message_id=callback_query.message.message_id,
+        text=message_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+
+# Обработчик для возврата к информации о мастере
+@dp.callback_query_handler(lambda c: c.data == "back_to_master_info", state=User.view_master)
+async def back_to_master_info(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    master_info = data.get('master_info', {})
+    master_works = data.get('master_works', [])
+    
+    # Получаем информацию о мастере
+    master_name = master_info.get('text', 'Мастер')
+    master_photo_url = master_info.get('url')
+    
+    # Формируем текст сообщения
+    message_text = f"👨‍🔧 <b>{master_name}</b>\n\n"
+    
+    # Добавляем информацию о работах мастера
+    if master_works:
+        message_text += "<b>Работы мастера:</b>\n"
+        for i, work in enumerate(master_works[:5]):  # Показываем до 5 работ
+            work_text = work.get('text', '').strip()
+            if work_text:
+                message_text += f"\n{i+1}. {work_text}"
+        
+        # Если работ больше 5, добавляем сообщение
+        if len(master_works) > 5:
+            message_text += f"\n\n<i>И ещё {len(master_works) - 5} работ</i>"
+    else:
+        message_text += "<i>У этого мастера пока нет добавленных работ в нашей базе.</i>"
+    
+    # Создаем клавиатуру с кнопками
+    kb = InlineKeyboardMarkup()
+    
+    # Добавляем кнопку для просмотра всех работ, если они есть
+    if master_works:
+        kb.add(InlineKeyboardButton("📷 Просмотреть все работы мастера", callback_data="master_works:0"))  # Индекс здесь не важен
+    
+    # Добавляем кнопки для навигации
+    kb.add(InlineKeyboardButton("📞 Связаться с мастером", callback_data="contact_master:0"))  # Индекс здесь не важен
+    kb.add(InlineKeyboardButton("◀️ Вернуться к списку мастеров", callback_data="back_to_masters"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отвечаем на callback
+    await bot.answer_callback_query(callback_query.id)
+    
+    # Отображаем информацию о мастере
+    if master_photo_url:
+        try:
+            # Отправляем фото мастера с новой информацией
+            await bot.send_photo(
+                chat_id=callback_query.message.chat.id,
+                photo=master_photo_url,
+                caption=message_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+            # Удаляем предыдущее сообщение
+            await bot.delete_message(
+                chat_id=callback_query.message.chat.id,
+                message_id=callback_query.message.message_id
+            )
+        except Exception as e:
+            # В случае ошибки просто обновляем текст
+            logger.error(f"Ошибка при отправке фото мастера: {e}")
+            await bot.edit_message_text(
+                chat_id=callback_query.message.chat.id,
+                message_id=callback_query.message.message_id,
+                text=f"{message_text}\n\n⚠️ <i>Не удалось загрузить фото мастера</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+    else:
+        # Если нет фото, просто обновляем сообщение
+        await bot.edit_message_text(
+            chat_id=callback_query.message.chat.id,
+            message_id=callback_query.message.message_id,
+            text=message_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+
+# Обработчик для возврата к списку мастеров в категории
+@dp.callback_query_handler(lambda c: c.data == "back_to_masters", state=User.view_master)
+async def back_to_masters_list(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    category_name = data.get('current_category')
+    masters = data.get('masters', [])
+    
+    # Отвечаем на callback
+    await bot.answer_callback_query(callback_query.id, "Возвращаемся к списку мастеров...")
+    
+    if not masters:
+        # Если нет данных о мастерах, показываем сообщение об ошибке
+        await bot.edit_message_text(
+            chat_id=callback_query.message.chat.id,
+            message_id=callback_query.message.message_id,
+            text="❌ <b>Не удалось загрузить список мастеров</b>\n\nПожалуйста, вернитесь к категориям.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_to_masters_keyboard()
+        )
+        return
+    
+    # Создаем клавиатуру с мастерами
+    kb = InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем мастеров
+    for i, photo in enumerate(masters):
+        master_name = photo.get('text', f'Мастер #{i+1}')
+        # Ограничиваем имя мастера 30 символами
+        if len(master_name) > 30:
+            master_name = master_name[:27] + "..."
+        kb.add(InlineKeyboardButton(master_name, callback_data=f"master:{i}"))
+    
+    # Добавляем кнопку назад
+    kb.add(InlineKeyboardButton("◀️ Назад к категориям", callback_data="back_to_master_categories"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отображаем список мастеров
+    await bot.edit_message_text(
+        chat_id=callback_query.message.chat.id,
+        message_id=callback_query.message.message_id,
+        text=f"👨‍🔧 <b>Мастера категории:</b> {category_name}\n\nВыберите мастера для просмотра информации:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    
+    await User.select_master.set()
+
+# Вспомогательная функция для создания клавиатуры возврата к мастерам
+def get_back_to_masters_keyboard():
+    """Создает клавиатуру с кнопками возврата к категориям мастеров"""
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("◀️ Вернуться к категориям мастеров", callback_data="back_to_master_categories"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    return kb
+
+# Обработчик для возврата к категориям мастеров
+@dp.callback_query_handler(lambda c: c.data == "back_to_master_categories", state=[User.select_master, User.view_master])
+async def back_to_master_categories(callback_query: types.CallbackQuery, state: FSMContext):
+    # Отвечаем на callback
+    await bot.answer_callback_query(callback_query.id, "Возвращаемся к категориям мастеров...")
+    
+    global non_empty_masters_cache
+    
+    # Создаем клавиатуру с категориями
+    kb = InlineKeyboardMarkup()
+    
+    # Добавляем категории мастеров в клавиатуру
+    if non_empty_masters_cache and "buttons" in non_empty_masters_cache:
+        for cat_name, count in non_empty_masters_cache["buttons"]:
+            # Если в категории есть мастера, добавляем кнопку
+            if count > 0:
+                button_text = f"{cat_name} ({count})"
+                kb.add(InlineKeyboardButton(button_text, callback_data=f"master_cat:{cat_name}"))
+    
+    # Добавляем кнопку для возврата в главное меню
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Отображаем категории
+    await bot.edit_message_text(
+        chat_id=callback_query.message.chat.id,
+        message_id=callback_query.message.message_id,
+        text='👨‍🔧 <b>Наши мастера</b>\n\nВыберите категорию мастеров:',
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+    
+    await User.select_master_category.set()
 
 if __name__ == '__main__':
     try:

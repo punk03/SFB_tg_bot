@@ -11,6 +11,11 @@ class User(StatesGroup):
     view_masters_carousel = State()  # Состояние просмотра карусели мастеров
     view_master_works = State()  # Состояние просмотра работ мастера
     
+    # Новые состояния для работы с мастерами
+    select_master_category = State()  # Состояние выбора категории мастеров
+    select_master = State()  # Состояние выбора мастера из категории
+    view_master = State()  # Состояние просмотра информации о мастере
+    
     # Расширенные состояния
     send_post = State()  # Состояние создания поста
     view_post = State()  # Состояние просмотра постов
