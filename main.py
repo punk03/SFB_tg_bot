@@ -576,11 +576,11 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
                 reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
             )
         else:
-            await bot.send_message(
+        await bot.send_message(
                 chat_id=chat_id,
                 text="⚠️ Фотографии не найдены.",
-                reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
-            )
+            reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
+        )
         return
     
     # Получаем текущую фотографию
@@ -622,6 +622,9 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
     # Добавляем кнопку возврата к категориям мастеров
     kb.add(InlineKeyboardButton("◀️ Вернуться к категориям", callback_data="master_back_to_categories"))
     
+    # Добавляем кнопку возврата в главное меню
+    kb.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
+    
     try:
         # Если нам передали ID сообщения для редактирования
         if edit_message_id:
@@ -655,28 +658,28 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
                     parse_mode=ParseMode.HTML
                 )
         else:
-            # Проверяем длину подписи
-            if len(full_caption) <= 1024:
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo['url'],
-                    caption=full_caption,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb
-                )
-            else:
-                # Если подпись слишком длинная, отправляем фото и текст отдельно
-                logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo['url'],
-                    reply_markup=kb
-                )
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=full_caption,
-                    parse_mode=ParseMode.HTML
-                )
+        # Проверяем длину подписи
+        if len(full_caption) <= 1024:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['url'],
+                caption=full_caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        else:
+            # Если подпись слишком длинная, отправляем фото и текст отдельно
+            logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['url'],
+                reply_markup=kb
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=full_caption,
+                parse_mode=ParseMode.HTML
+            )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке/редактировании фото мастера: {error_msg}")
@@ -700,12 +703,12 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
                     reply_markup=kb
                 )
         else:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb
-            )
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
 
 # Функция для отправки фотографии работ мастера с кнопками навигации
 async def send_master_work_photo(chat_id, state, edit_message_id=None):
@@ -718,7 +721,7 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
     if not photos or len(photos) == 0:
         # Используем только InlineKeyboardMarkup вместо navigation_keyboard с категориями
         inline_kb = InlineKeyboardMarkup(row_width=1)
-        inline_kb.add(InlineKeyboardButton("◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ", callback_data="master_back_to_categories"))
+        inline_kb.add(InlineKeyboardButton("◀️ Вернуться к анкете мастера", callback_data="back_to_master"))
         
         if edit_message_id:
             await bot.edit_message_text(
@@ -728,11 +731,11 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
                 reply_markup=inline_kb
             )
         else:
-            await bot.send_message(
+        await bot.send_message(
                 chat_id=chat_id,
                 text="⚠️ Фотографии работ не найдены.",
-                reply_markup=inline_kb
-            )
+            reply_markup=inline_kb
+        )
         return
     
     # Получаем текущую фотографию
@@ -759,9 +762,8 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
     # Добавляем счетчик
     kb.add(InlineKeyboardButton(f"{current_index+1}/{len(photos)}", callback_data="work_count"))
     
-    # Добавляем кнопки навигации к фотографии (возврат к анкете мастера и к категориям)
+    # Добавляем только кнопку для возврата к анкете мастера
     kb.add(InlineKeyboardButton("◀️ Вернуться к анкете мастера", callback_data="back_to_master"))
-    kb.add(InlineKeyboardButton("◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ", callback_data="master_back_to_categories"))
     
     try:
         # Если нам передали ID сообщения для редактирования
@@ -798,28 +800,28 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
                     parse_mode=ParseMode.HTML
                 )
         else:
-            # Отправляем фото с подписью и с кнопками
-            if len(full_caption) <= 1024:
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo['url'],
-                    caption=full_caption,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb
-                )
-            else:
-                # Если подпись слишком длинная, отправляем фото и текст отдельно
-                logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo['url'],
-                    reply_markup=kb
-                )
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=full_caption,
-                    parse_mode=ParseMode.HTML
-                )
+        # Отправляем фото с подписью и с кнопками
+        if len(full_caption) <= 1024:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['url'],
+                caption=full_caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        else:
+            # Если подпись слишком длинная, отправляем фото и текст отдельно
+            logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['url'],
+                reply_markup=kb
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=full_caption,
+                parse_mode=ParseMode.HTML
+            )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ошибка при отправке/редактировании фото работы мастера: {error_msg}")
@@ -836,12 +838,12 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
             except Exception as inner_e:
                 logger.error(f"Ошибка при отправке текста ошибки: {inner_e}")
                 # Если не удалось отредактировать, отправляем новое сообщение
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb
-                )
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
+                         parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
         else:
             # Отправляем новое сообщение с текстом ошибки
             await bot.send_message(
@@ -849,7 +851,7 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
                 text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb
-            )
+        )
 
 # Обработчик нажатия кнопки "Далее" в карусели работ мастера
 @dp.callback_query_handler(lambda c: c.data == "work_next", state=User.view_master_works)
@@ -2080,18 +2082,6 @@ async def keyboard_back_to_categories_from_works(message: types.Message, state: 
     # Вызываем функцию возврата к категориям мастеров
     await back_to_master_categories(message, state)
 
-# Обработчик нажатия кнопки "Вернуться к категориям" в карусели работ мастера
-@dp.callback_query_handler(lambda c: c.data == "master_back_to_categories", state=User.view_master_works)
-async def master_works_back_to_categories_callback(callback_query: types.CallbackQuery, state: FSMContext):
-    # Удаляем предыдущее сообщение
-    await callback_query.message.delete()
-    
-    # Вызываем функцию возврата к категориям мастеров
-    await back_to_master_categories(callback_query.message, state)
-    
-    # Отвечаем на callback, чтобы убрать часики на кнопке
-    await callback_query.answer()
-
 # Обработчик для просмотра списка мастеров
 @dp.message_handler(lambda m: m.text == "👨‍🔧 Каталог мастеров")
 async def masters_handler(message: types.Message, state: FSMContext):
@@ -2275,7 +2265,7 @@ async def process_master_selection(callback_query: types.CallbackQuery, state: F
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb
             )
-            # Удаляем предыдущее сообщение
+    # Удаляем предыдущее сообщение
             await bot.delete_message(
                 chat_id=callback_query.message.chat.id,
                 message_id=callback_query.message.message_id
@@ -2568,8 +2558,8 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         logger.info(f"Найдено {len(work_photos)} работ мастера для фото ID: {photo_id}")
         
         # Удаляем предыдущее сообщение с фото мастера
-        await callback_query.message.delete()
-        
+    await callback_query.message.delete()
+    
         # Полностью очищаем предыдущее состояние
         await state.finish()
         
@@ -2592,6 +2582,35 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
             f"⚠️ Произошла ошибка при загрузке работ мастера: {str(e)}",
             reply_markup=None
         )
+
+# Обработчик для кнопки "Главное меню" в inline-клавиатуре
+@dp.callback_query_handler(lambda c: c.data == "main_menu", state="*")
+async def main_menu_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Удаляем текущее сообщение с inline-клавиатурой
+    await callback_query.message.delete()
+    
+    # Отвечаем на callback, чтобы убрать часики на кнопке
+    await callback_query.answer("Возвращаемся в главное меню")
+    
+    # Сбрасываем состояние
+    await state.finish()
+    
+    # Получаем имя пользователя
+    user_name = callback_query.from_user.first_name
+    
+    # Получаем описание группы из ВКонтакте или из кэша
+    welcome_message = await get_group_description_async(config.VK_TOKEN, config.VK_GROUP_ID)
+    
+    # Если не удалось получить описание, используем сообщение из конфига
+    if not welcome_message:
+        welcome_message = config.WELCOME_MESSAGE
+    
+    # Отправляем приветственное сообщение с главной клавиатурой
+    await callback_query.message.answer(
+        f"👋 Здравствуйте, {user_name}!\n\n{welcome_message}",
+        parse_mode=ParseMode.HTML,
+        reply_markup=buttons.main
+    )
 
 if __name__ == '__main__':
     try:

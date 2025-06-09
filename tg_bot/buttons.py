@@ -257,6 +257,7 @@ def navigation_keyboard(include_shop_categories=False, include_masters_categorie
     """
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     
+    # Добавляем кнопки в определенном порядке навигации - от ближайшего возврата к дальнему
     if include_shop_list:
         kb.add(KeyboardButton('◀️ Вернуться к списку магазинов'))
     
@@ -267,6 +268,7 @@ def navigation_keyboard(include_shop_categories=False, include_masters_categorie
         # Используем особый текст для кнопки, чтобы точно идентифицировать ее
         kb.add(KeyboardButton('◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ ◀️'))
     
+    # Кнопка возврата в главное меню всегда присутствует
     kb.add(KeyboardButton('◀️ Назад в главное меню'))
     
     return kb
