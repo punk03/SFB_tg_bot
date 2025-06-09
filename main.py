@@ -560,7 +560,7 @@ async def show_master(message: types.Message, state: FSMContext):
     await User.view_masters_carousel.set()
 
 # Функция для отправки фотографии мастера с кнопками навигации
-async def send_master_photo(chat_id, state):
+async def send_master_photo(chat_id, state, edit_message_id=None):
     # Получаем данные из состояния
     data = await state.get_data()
     photos = data.get('master_photos', [])
@@ -568,11 +568,19 @@ async def send_master_photo(chat_id, state):
     category = data.get('current_master_category', 'Мастера')
     
     if not photos or len(photos) == 0:
-        await bot.send_message(
-            chat_id,
-            "⚠️ Фотографии не найдены.",
-            reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
-        )
+        if edit_message_id:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=edit_message_id,
+                text="⚠️ Фотографии не найдены.",
+                reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
+            )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Фотографии не найдены.",
+                reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
+            )
         return
     
     # Получаем текущую фотографию
@@ -615,40 +623,92 @@ async def send_master_photo(chat_id, state):
     kb.add(InlineKeyboardButton("◀️ Вернуться к категориям", callback_data="master_back_to_categories"))
     
     try:
-        # Проверяем длину подписи
-        if len(full_caption) <= 1024:
-            await bot.send_photo(
+        # Если нам передали ID сообщения для редактирования
+        if edit_message_id:
+            if len(full_caption) <= 1024:
+                # Редактируем существующее сообщение
+                await bot.edit_message_media(
+                    chat_id=chat_id,
+                    message_id=edit_message_id,
+                    media=types.InputMediaPhoto(
+                        media=photo['url'],
+                        caption=full_caption,
+                        parse_mode=ParseMode.HTML
+                    ),
+                    reply_markup=kb
+                )
+            else:
+                # Если подпись слишком длинная, редактируем без подписи
+                logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем только фото.")
+                await bot.edit_message_media(
+                    chat_id=chat_id,
+                    message_id=edit_message_id,
+                    media=types.InputMediaPhoto(
+                        media=photo['url']
+                    ),
+                    reply_markup=kb
+                )
+                # И отправляем текстовое сообщение отдельно
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=full_caption,
+                    parse_mode=ParseMode.HTML
+                )
+        else:
+            # Проверяем длину подписи
+            if len(full_caption) <= 1024:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    caption=full_caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+            else:
+                # Если подпись слишком длинная, отправляем фото и текст отдельно
+                logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    reply_markup=kb
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=full_caption,
+                    parse_mode=ParseMode.HTML
+                )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Ошибка при отправке/редактировании фото мастера: {error_msg}")
+        if edit_message_id:
+            # Пробуем отредактировать текст в случае ошибки
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=edit_message_id,
+                    text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+            except Exception as inner_e:
+                logger.error(f"Ошибка при отправке текста ошибки: {inner_e}")
+                # Если не удалось отредактировать, отправляем новое сообщение
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+        else:
+            await bot.send_message(
                 chat_id=chat_id,
-                photo=photo['url'],
-                caption=full_caption,
+                text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb
             )
-        else:
-            # Если подпись слишком длинная, отправляем фото и текст отдельно
-            logger.info(f"Слишком длинная подпись для фото мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo['url'],
-                reply_markup=kb
-            )
-            await bot.send_message(
-                chat_id=chat_id,
-                text=full_caption,
-                parse_mode=ParseMode.HTML
-            )
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Ошибка при отправке фото мастера: {error_msg}")
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"⚠️ Не удалось загрузить фото мастера.\n\n{full_caption}",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb
-        )
 
 # Функция для отправки фотографии работ мастера с кнопками навигации
-async def send_master_work_photo(chat_id, state):
+async def send_master_work_photo(chat_id, state, edit_message_id=None):
     # Получаем данные из состояния
     data = await state.get_data()
     photos = data.get('master_work_photos', [])
@@ -660,11 +720,19 @@ async def send_master_work_photo(chat_id, state):
         inline_kb = InlineKeyboardMarkup(row_width=1)
         inline_kb.add(InlineKeyboardButton("◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ", callback_data="master_back_to_categories"))
         
-        await bot.send_message(
-            chat_id,
-            "⚠️ Фотографии работ не найдены.",
-            reply_markup=inline_kb
-        )
+        if edit_message_id:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=edit_message_id,
+                text="⚠️ Фотографии работ не найдены.",
+                reply_markup=inline_kb
+            )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Фотографии работ не найдены.",
+                reply_markup=inline_kb
+            )
         return
     
     # Получаем текущую фотографию
@@ -696,119 +764,92 @@ async def send_master_work_photo(chat_id, state):
     kb.add(InlineKeyboardButton("◀️ НАЗАД К КАТЕГОРИЯМ МАСТЕРОВ", callback_data="master_back_to_categories"))
     
     try:
-        # Отправляем фото с подписью и с кнопками
-        if len(full_caption) <= 1024:
-            await bot.send_photo(
+        # Если нам передали ID сообщения для редактирования
+        if edit_message_id:
+            if len(full_caption) <= 1024:
+                # Редактируем существующее сообщение
+                await bot.edit_message_media(
+                    chat_id=chat_id,
+                    message_id=edit_message_id,
+                    media=types.InputMediaPhoto(
+                        media=photo['url'],
+                        caption=full_caption,
+                        parse_mode=ParseMode.HTML
+                    ),
+                    reply_markup=kb
+                )
+            else:
+                # Если подпись слишком длинная, редактируем без подписи
+                logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем только фото.")
+                await bot.edit_message_media(
+                    chat_id=chat_id,
+                    message_id=edit_message_id,
+                    media=types.InputMediaPhoto(
+                        media=photo['url']
+                    ),
+                    reply_markup=kb
+                )
+                # И отправляем текстовое сообщение отдельно
+                # Примечание: текстовое сообщение будет дублироваться при каждом пролистывании,
+                # но это неизбежно при редактировании медиа с длинным текстом
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=full_caption,
+                    parse_mode=ParseMode.HTML
+                )
+        else:
+            # Отправляем фото с подписью и с кнопками
+            if len(full_caption) <= 1024:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    caption=full_caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+            else:
+                # Если подпись слишком длинная, отправляем фото и текст отдельно
+                logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo['url'],
+                    reply_markup=kb
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=full_caption,
+                    parse_mode=ParseMode.HTML
+                )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Ошибка при отправке/редактировании фото работы мастера: {error_msg}")
+        if edit_message_id:
+            # Пробуем отредактировать текст в случае ошибки
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=edit_message_id,
+                    text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+            except Exception as inner_e:
+                logger.error(f"Ошибка при отправке текста ошибки: {inner_e}")
+                # Если не удалось отредактировать, отправляем новое сообщение
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb
+                )
+        else:
+            # Отправляем новое сообщение с текстом ошибки
+            await bot.send_message(
                 chat_id=chat_id,
-                photo=photo['url'],
-                caption=full_caption,
+                text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb
             )
-        else:
-            # Если подпись слишком длинная, отправляем фото и текст отдельно
-            logger.info(f"Слишком длинная подпись для фото работы мастера: {len(full_caption)} символов. Отправляем фото и текст отдельно.")
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=photo['url'],
-                reply_markup=kb
-            )
-            await bot.send_message(
-                chat_id=chat_id,
-                text=full_caption,
-                parse_mode=ParseMode.HTML
-            )
-            
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Ошибка при отправке фото работы мастера: {error_msg}")
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"⚠️ Не удалось загрузить фото работы мастера.\n\n{full_caption}",
-                         parse_mode=ParseMode.HTML,
-            reply_markup=kb
-        )
-
-# Обработчик нажатия кнопки "Посмотреть работы мастера"
-@dp.callback_query_handler(lambda c: c.data.startswith("master_works_"), state=User.view_masters_carousel)
-async def master_works_callback(callback_query: types.CallbackQuery, state: FSMContext):
-    # Извлекаем ID фотографии из callback_data
-    photo_id = callback_query.data.replace("master_works_", "")
-    
-    # Показываем сообщение о загрузке
-    await callback_query.answer("Загружаем работы мастера...")
-    loading_message = await callback_query.message.answer("🔄 <b>Загружаем работы мастера...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
-    
-    # Получаем данные из состояния
-    data = await state.get_data()
-    category = data.get('current_master_category', 'Мастера')
-    
-    try:
-        # Сначала проверяем, есть ли работы мастера в кэше
-        work_photos = []
-        global non_empty_masters_cache
-        if (non_empty_masters_cache and 
-            "master_works" in non_empty_masters_cache and 
-            category in non_empty_masters_cache["master_works"] and 
-            photo_id in non_empty_masters_cache["master_works"][category]):
-            # Берем работы из кэша
-            work_photos = non_empty_masters_cache["master_works"][category][photo_id]
-            logger.info(f"Использую кэшированные работы мастера для фото ID: {photo_id}")
-        else:
-            # Если в кэше нет, получаем комментарии к фотографии (работы мастера)
-            logger.info(f"Загружаем работы мастера для фото ID: {photo_id}")
-            work_photos = await get_photo_comments_async(config.VK_TOKEN, config.VK_GROUP_ID, photo_id)
-            
-            # Сохраняем в кэш для будущего использования
-            if work_photos and len(work_photos) > 0:
-                if not non_empty_masters_cache:
-                    non_empty_masters_cache = {}
-                if "master_works" not in non_empty_masters_cache:
-                    non_empty_masters_cache["master_works"] = {}
-                if category not in non_empty_masters_cache["master_works"]:
-                    non_empty_masters_cache["master_works"][category] = {}
-                non_empty_masters_cache["master_works"][category][photo_id] = work_photos
-                logger.info(f"Сохранил {len(work_photos)} работ мастера в кэш для фото ID: {photo_id}")
-        
-        # Удаляем сообщение о загрузке
-        await loading_message.delete()
-        
-        # Проверяем, есть ли фотографии работ
-        if not work_photos or len(work_photos) == 0:
-            await callback_query.message.answer(
-                "⚠️ У этого мастера пока нет фотографий работ.",
-                reply_markup=None
-            )
-            return
-        
-        # Логируем количество найденных работ
-        logger.info(f"Найдено {len(work_photos)} работ мастера для фото ID: {photo_id}")
-        
-        # Удаляем предыдущее сообщение с фото мастера
-        await callback_query.message.delete()
-        
-        # Полностью очищаем предыдущее состояние
-        await state.finish()
-        
-        # Переходим в состояние просмотра работ мастера
-        await User.view_master_works.set()
-        
-        # Сохраняем только необходимые данные
-        await state.update_data(
-            master_work_photos=work_photos,
-            current_work_index=0,
-            current_master_category=category
-        )
-        
-        # Отправляем первую фотографию работы
-        await send_master_work_photo(callback_query.message.chat.id, state)
-    except Exception as e:
-        logger.error(f"Ошибка при получении работ мастера: {e}")
-        await loading_message.delete()
-        await callback_query.message.answer(
-            f"⚠️ Произошла ошибка при загрузке работ мастера: {str(e)}",
-            reply_markup=None
-        )
 
 # Обработчик нажатия кнопки "Далее" в карусели работ мастера
 @dp.callback_query_handler(lambda c: c.data == "work_next", state=User.view_master_works)
@@ -824,11 +865,12 @@ async def work_next_callback(callback_query: types.CallbackQuery, state: FSMCont
         # Обновляем только индекс текущей работы, не трогая остальные данные
         await state.update_data(current_work_index=current_index)
     
-    # Удаляем предыдущее сообщение
-    await callback_query.message.delete()
-    
-    # Отправляем новую фотографию
-    await send_master_work_photo(callback_query.message.chat.id, state)
+    # Вместо удаления и отправки нового сообщения, редактируем текущее
+    await send_master_work_photo(
+        chat_id=callback_query.message.chat.id, 
+        state=state, 
+        edit_message_id=callback_query.message.message_id
+    )
     
     # Отвечаем на callback, чтобы убрать часики на кнопке
     await callback_query.answer()
@@ -846,11 +888,12 @@ async def work_prev_callback(callback_query: types.CallbackQuery, state: FSMCont
         # Обновляем только индекс текущей работы, не трогая остальные данные
         await state.update_data(current_work_index=current_index)
     
-    # Удаляем предыдущее сообщение
-    await callback_query.message.delete()
-    
-    # Отправляем новую фотографию
-    await send_master_work_photo(callback_query.message.chat.id, state)
+    # Вместо удаления и отправки нового сообщения, редактируем текущее
+    await send_master_work_photo(
+        chat_id=callback_query.message.chat.id, 
+        state=state, 
+        edit_message_id=callback_query.message.message_id
+    )
     
     # Отвечаем на callback, чтобы убрать часики на кнопке
     await callback_query.answer()
@@ -1927,11 +1970,12 @@ async def master_next_callback(callback_query: types.CallbackQuery, state: FSMCo
         current_index += 1
         await state.update_data(current_photo_index=current_index)
     
-    # Удаляем предыдущее сообщение
-    await callback_query.message.delete()
-    
-    # Отправляем новую фотографию
-    await send_master_photo(callback_query.message.chat.id, state)
+    # Вместо удаления и отправки нового сообщения, редактируем текущее
+    await send_master_photo(
+        chat_id=callback_query.message.chat.id, 
+        state=state, 
+        edit_message_id=callback_query.message.message_id
+    )
     
     # Отвечаем на callback, чтобы убрать часики на кнопке
     await callback_query.answer()
@@ -1948,11 +1992,12 @@ async def master_prev_callback(callback_query: types.CallbackQuery, state: FSMCo
         current_index -= 1
         await state.update_data(current_photo_index=current_index)
     
-    # Удаляем предыдущее сообщение
-    await callback_query.message.delete()
-    
-    # Отправляем новую фотографию
-    await send_master_photo(callback_query.message.chat.id, state)
+    # Вместо удаления и отправки нового сообщения, редактируем текущее
+    await send_master_photo(
+        chat_id=callback_query.message.chat.id, 
+        state=state, 
+        edit_message_id=callback_query.message.message_id
+    )
     
     # Отвечаем на callback, чтобы убрать часики на кнопке
     await callback_query.answer()
@@ -2466,6 +2511,87 @@ async def back_to_master_categories(callback_query: types.CallbackQuery, state: 
     )
     
     await User.select_master_category.set()
+
+# Обработчик нажатия кнопки "Посмотреть работы мастера"
+@dp.callback_query_handler(lambda c: c.data.startswith("master_works_"), state=User.view_masters_carousel)
+async def master_works_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Извлекаем ID фотографии из callback_data
+    photo_id = callback_query.data.replace("master_works_", "")
+    
+    # Показываем сообщение о загрузке
+    await callback_query.answer("Загружаем работы мастера...")
+    loading_message = await callback_query.message.answer("🔄 <b>Загружаем работы мастера...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
+    
+    # Получаем данные из состояния
+    data = await state.get_data()
+    category = data.get('current_master_category', 'Мастера')
+    
+    try:
+        # Сначала проверяем, есть ли работы мастера в кэше
+        work_photos = []
+        global non_empty_masters_cache
+        if (non_empty_masters_cache and 
+            "master_works" in non_empty_masters_cache and 
+            category in non_empty_masters_cache["master_works"] and 
+            photo_id in non_empty_masters_cache["master_works"][category]):
+            # Берем работы из кэша
+            work_photos = non_empty_masters_cache["master_works"][category][photo_id]
+            logger.info(f"Использую кэшированные работы мастера для фото ID: {photo_id}")
+        else:
+            # Если в кэше нет, получаем комментарии к фотографии (работы мастера)
+            logger.info(f"Загружаем работы мастера для фото ID: {photo_id}")
+            work_photos = await get_photo_comments_async(config.VK_TOKEN, config.VK_GROUP_ID, photo_id)
+            
+            # Сохраняем в кэш для будущего использования
+            if work_photos and len(work_photos) > 0:
+                if not non_empty_masters_cache:
+                    non_empty_masters_cache = {}
+                if "master_works" not in non_empty_masters_cache:
+                    non_empty_masters_cache["master_works"] = {}
+                if category not in non_empty_masters_cache["master_works"]:
+                    non_empty_masters_cache["master_works"][category] = {}
+                non_empty_masters_cache["master_works"][category][photo_id] = work_photos
+                logger.info(f"Сохранил {len(work_photos)} работ мастера в кэш для фото ID: {photo_id}")
+        
+        # Удаляем сообщение о загрузке
+        await loading_message.delete()
+        
+        # Проверяем, есть ли фотографии работ
+        if not work_photos or len(work_photos) == 0:
+            await callback_query.message.answer(
+                "⚠️ У этого мастера пока нет фотографий работ.",
+                reply_markup=None
+            )
+            return
+        
+        # Логируем количество найденных работ
+        logger.info(f"Найдено {len(work_photos)} работ мастера для фото ID: {photo_id}")
+        
+        # Удаляем предыдущее сообщение с фото мастера
+        await callback_query.message.delete()
+        
+        # Полностью очищаем предыдущее состояние
+        await state.finish()
+        
+        # Переходим в состояние просмотра работ мастера
+        await User.view_master_works.set()
+        
+        # Сохраняем только необходимые данные
+        await state.update_data(
+            master_work_photos=work_photos,
+            current_work_index=0,
+            current_master_category=category
+        )
+        
+        # Отправляем первую фотографию работы
+        await send_master_work_photo(callback_query.message.chat.id, state)
+    except Exception as e:
+        logger.error(f"Ошибка при получении работ мастера: {e}")
+        await loading_message.delete()
+        await callback_query.message.answer(
+            f"⚠️ Произошла ошибка при загрузке работ мастера: {str(e)}",
+            reply_markup=None
+        )
 
 if __name__ == '__main__':
     try:
