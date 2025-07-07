@@ -605,9 +605,15 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
     # Получаем текущую фотографию
     photo = photos[current_index]
     
+    # Сохраняем информацию о текущем мастере в состоянии
+    await state.update_data(master_info=photo)
+    
     # Формируем подпись
+    master_name = photo.get('text', '').strip()
+    master_fio = master_name.split('\n')[0] if master_name and '\n' in master_name else master_name
+    
     caption = photo.get('description', '') if photo.get('description') else f"Фото {current_index+1} из {len(photos)}"
-    full_caption = f"<b>📸 {category}</b>\n\n{caption}"
+    full_caption = f"<b>📸 {category} - {master_fio}</b>\n\n{caption}"
     
     # Добавляем ссылки с помощью нашей функции
     full_caption = add_links_footer(full_caption)
@@ -943,6 +949,7 @@ async def back_to_master_callback(callback_query: types.CallbackQuery, state: FS
     # Получаем необходимые данные из текущего состояния
     data = await state.get_data()
     category = data.get('current_master_category', 'Мастера')
+    master_info = data.get('master_info', {})
     
     # Удаляем предыдущее сообщение
     await callback_query.message.delete()
@@ -986,11 +993,21 @@ async def back_to_master_callback(callback_query: types.CallbackQuery, state: FS
     # Переходим обратно в состояние просмотра карусели мастеров
     await User.view_masters_carousel.set()
     
-    # Сохраняем только необходимые данные для просмотра анкеты мастера
+    # Находим индекс мастера по его информации
+    current_photo_index = 0
+    if master_info and master_photos:
+        master_text = master_info.get('text', '')
+        for i, photo in enumerate(master_photos):
+            if photo.get('text') == master_text:
+                current_photo_index = i
+                break
+    
+    # Сохраняем данные для просмотра анкеты мастера, включая информацию о мастере
     await state.update_data(
         current_master_category=category,
         master_photos=master_photos,
-        current_photo_index=0
+        current_photo_index=current_photo_index,
+        master_info=master_info
     )
     
     # Отправляем фото мастера
@@ -2715,14 +2732,18 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         # Полностью очищаем предыдущее состояние
         await state.finish()
         
+        # Получаем информацию о мастере
+        master_info = data.get('master_info', {})
+        
         # Переходим в состояние просмотра работ мастера
         await User.view_master_works.set()
         
-        # Сохраняем только необходимые данные
+        # Сохраняем необходимые данные, включая информацию о мастере
         await state.update_data(
             master_work_photos=work_photos,
             current_work_index=0,
-            current_master_category=category
+            current_master_category=category,
+            master_info=master_info
         )
         
         # Отправляем первую фотографию работы
