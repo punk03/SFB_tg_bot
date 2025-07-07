@@ -7,6 +7,7 @@ from aiogram.dispatcher.filters import Text
 from tg_bot.states import User
 from tg_bot import buttons
 import vk
+from vk import get_topic_info_async, get_topic_comments_async
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import asyncio
 import config
@@ -1630,10 +1631,89 @@ async def offer_post_message(message: types.Message):
 # Обработчик для кнопки "Стать магазином-партнером"
 @dp.message_handler(lambda m: m.text == "🤝 Стать магазином-партнером" or m.text == "Стать магазином-партнером")
 async def vk_partner_handler(message: types.Message):
-    await message.answer(
-        "🤝 <b>Стать магазином-партнером</b>\n\n"
-        "Чтобы стать магазином-партнером, перейдите по ссылке ниже и оставьте заявку:\n"
-        f"<a href='{config.VK_PARTNER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>",
+    # Показываем пользователю сообщение о загрузке
+    loading_message = await message.answer("🔄 <b>Загружаю информацию из ВКонтакте...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
+    
+    # Извлекаем topic_id из URL
+    topic_url = config.VK_PARTNER_TOPIC_URL
+    topic_id = None
+    
+    try:
+        # URL имеет формат https://vk.com/topic-GROUP_ID_TOPIC_ID
+        parts = topic_url.split("topic-")
+        if len(parts) > 1:
+            parts = parts[1].split("_")
+            if len(parts) > 1:
+                topic_id = parts[1]
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении ID темы из URL {topic_url}: {e}")
+    
+    # Если не удалось извлечь topic_id, используем значение по умолчанию
+    if not topic_id:
+        # ID темы задан в URL после topic-GROUP_ID_TOPIC_ID
+        # Например, из https://vk.com/topic-95855103_49010445 извлекаем 49010445
+        topic_id = "49010445"  # Значение по умолчанию
+    
+    # Извлекаем group_id из конфигурации
+    group_id = str(config.VK_GROUP_ID).replace("-", "")
+    
+    # Получаем информацию о теме и последние комментарии
+    topic_info = None
+    recent_comments = []
+    
+    try:
+        topic_info = await get_topic_info_async(config.VK_TOKEN, group_id, topic_id)
+        if topic_info:
+            recent_comments = await get_topic_comments_async(config.VK_TOKEN, group_id, topic_id, count=5)
+    except Exception as e:
+        logger.error(f"Ошибка при получении данных из темы VK: {e}")
+    
+    # Формируем текст сообщения
+    text_message = "🤝 <b>Стать магазином-партнером</b>\n\n"
+    
+    # Добавляем информацию из темы, если она доступна
+    if topic_info:
+        # Используем заголовок темы, если он есть
+        if topic_info["title"] and topic_info["title"] != "Без названия":
+            text_message = f"🤝 <b>{topic_info['title']}</b>\n\n"
+        
+        # Если есть текст первого сообщения (описание), добавляем его
+        if topic_info["text"]:
+            # Ограничиваем длину текста, если он слишком длинный
+            description = topic_info["text"]
+            if len(description) > 300:
+                description = description[:297] + "..."
+            
+            text_message += f"{description}\n\n"
+    else:
+        text_message += "Чтобы стать магазином-партнером, перейдите по ссылке ниже и оставьте заявку:\n"
+    
+    # Добавляем ссылку на тему
+    text_message += f"<a href='{config.VK_PARTNER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
+    
+    # Если есть последние комментарии, добавляем их
+    if recent_comments:
+        text_message += "\n\n<b>Последние заявки на партнерство:</b>\n"
+        
+        for i, comment in enumerate(recent_comments[:3]):  # Показываем максимум 3 последних комментария
+            # Получаем текст комментария (обрезаем, если слишком длинный)
+            comment_text = comment.get("text", "")
+            if len(comment_text) > 100:
+                comment_text = comment_text[:97] + "..."
+            
+            # Получаем имя пользователя
+            user_name = comment.get("user", {}).get("name", "Пользователь")
+            
+            # Форматируем вывод комментария
+            text_message += f"\n{i+1}. <b>{user_name}</b>: {comment_text}"
+    
+    # Удаляем сообщение о загрузке
+    await loading_message.delete()
+    
+    # Отправляем сообщение с добавлением ссылок на ресурсы
+    await send_message_with_links(
+        message,
+        text_message,
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.go_back()
     )
@@ -1641,6 +1721,9 @@ async def vk_partner_handler(message: types.Message):
 # Обработчик для кнопки "Попасть в базу мастеров"
 @dp.message_handler(lambda m: m.text == "📋 Попасть в базу мастеров" or m.text == "Попасть в базу мастеров")
 async def vk_master_handler(message: types.Message):
+    # Показываем пользователю сообщение о загрузке
+    loading_message = await message.answer("🔄 <b>Загружаю информацию из ВКонтакте...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
+    
     # Проверяем есть ли кэш категорий для информационного сообщения
     global non_empty_masters_cache
     
@@ -1659,16 +1742,83 @@ async def vk_master_handler(message: types.Message):
                         break
                 category_info += f"• {cleaned_cat}\n"
     
-    text_message = (
-        "📋 <b>Хочу в базу мастеров и спецтехники</b>\n\n"
+    # Извлекаем topic_id из URL
+    topic_url = config.VK_MASTER_TOPIC_URL
+    topic_id = None
+    
+    try:
+        # URL имеет формат https://vk.com/topic-GROUP_ID_TOPIC_ID
+        parts = topic_url.split("topic-")
+        if len(parts) > 1:
+            parts = parts[1].split("_")
+            if len(parts) > 1:
+                topic_id = parts[1]
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении ID темы из URL {topic_url}: {e}")
+    
+    # Если не удалось извлечь topic_id, используем значение из конфигурации
+    if not topic_id:
+        # ID темы задан в URL после topic-GROUP_ID_TOPIC_ID
+        # Например, из https://vk.com/topic-95855103_49010449 извлекаем 49010449
+        topic_id = "49010449"  # Значение по умолчанию
+    
+    # Извлекаем group_id из конфигурации
+    group_id = str(config.VK_GROUP_ID).replace("-", "")
+    
+    # Получаем информацию о теме и последние комментарии
+    topic_info = None
+    recent_comments = []
+    
+    try:
+        topic_info = await get_topic_info_async(config.VK_TOKEN, group_id, topic_id)
+        if topic_info:
+            recent_comments = await get_topic_comments_async(config.VK_TOKEN, group_id, topic_id, count=5)
+    except Exception as e:
+        logger.error(f"Ошибка при получении данных из темы VK: {e}")
+    
+    # Формируем основной текст сообщения
+    text_message = "📋 <b>Хочу в базу мастеров и спецтехники</b>\n\n"
+    
+    # Добавляем информацию из темы, если она доступна
+    if topic_info:
+        # Используем заголовок темы, если он есть
+        if topic_info["title"] and topic_info["title"] != "Без названия":
+            text_message = f"📋 <b>{topic_info['title']}</b>\n\n"
+    
+    text_message += (
         "Чтобы попасть в базу мастеров:\n\n"
         "1️⃣ Подготовьте фотографию с информацией о ваших услугах\n"
         "2️⃣ Укажите категорию из списка ниже\n"
-        "3️⃣ Оставьте заявку по ссылке:" 
-        f"{category_info}\n\n"
-        f"<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
+        "3️⃣ Оставьте заявку по ссылке"
     )
     
+    # Добавляем категории, если они есть
+    if category_info:
+        text_message += category_info
+    
+    # Добавляем ссылку на тему
+    text_message += f"\n\n<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
+    
+    # Если есть последние комментарии, добавляем их
+    if recent_comments:
+        text_message += "\n\n<b>Последние заявки в базу мастеров:</b>\n"
+        
+        for i, comment in enumerate(recent_comments[:3]):  # Показываем максимум 3 последних комментария
+            # Получаем текст комментария (обрезаем, если слишком длинный)
+            comment_text = comment.get("text", "")
+            if len(comment_text) > 100:
+                comment_text = comment_text[:97] + "..."
+            
+            # Получаем имя пользователя
+            user_name = comment.get("user", {}).get("name", "Пользователь")
+            
+            # Форматируем вывод комментария
+            text_message += f"\n{i+1}. <b>{user_name}</b>: {comment_text}"
+    
+    # Удаляем сообщение о загрузке
+    await loading_message.delete()
+    
+    # Отправляем сообщение с добавлением ссылок на ресурсы
     await send_message_with_links(
         message,
         text_message,

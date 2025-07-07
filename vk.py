@@ -428,9 +428,192 @@ def get_photo_comments(token, owner_id, photo_id):
                 if photos:
                     result.extend(photos)
         
-        logger.info(f"Получено {len(result)} фотографий из комментариев к фото {photo_id}")
         return result
 
     except Exception as e:
-        logger.error(f"Ошибка при получении комментариев к фото {photo_id}: {e}")
-        return [] 
+        logger.error(f"Ошибка при получении комментариев к фотографии {photo_id}: {e}")
+        return []
+
+
+def get_topic_comments(token, group_id, topic_id, count=100):
+    """
+    Получает комментарии из темы (обсуждения) ВКонтакте
+    
+    Args:
+        token: токен доступа ВКонтакте
+        group_id: ID группы ВКонтакте (без минуса)
+        topic_id: ID темы (обсуждения)
+        count: количество комментариев для получения (максимум 100)
+    
+    Returns:
+        Список комментариев с информацией об авторах и прикреплениях
+    """
+    try:
+        vk_session = get_vk_session(token)
+        if not vk_session:
+            return []
+            
+        vk = vk_session.get_api()
+        
+        # Получаем комментарии из обсуждения
+        comments = vk.board.getComments(
+            group_id=group_id,
+            topic_id=topic_id,
+            count=count,
+            extended=1,  # Получаем расширенную информацию
+            need_likes=0,
+            sort="desc"  # Сначала новые комментарии
+        )
+        
+        result = []
+        
+        # Получаем информацию о пользователях для маппинга
+        users_map = {}
+        if "profiles" in comments:
+            for profile in comments.get("profiles", []):
+                user_id = profile.get("id")
+                first_name = profile.get("first_name", "")
+                last_name = profile.get("last_name", "")
+                full_name = f"{first_name} {last_name}".strip()
+                photo = profile.get("photo_100", "")
+                
+                users_map[user_id] = {
+                    "name": full_name,
+                    "photo": photo
+                }
+        
+        # Обрабатываем комментарии
+        for comment in comments.get("items", []):
+            # Получаем основную информацию
+            text = comment.get("text", "")
+            date = comment.get("date", 0)
+            from_id = comment.get("from_id", 0)
+            
+            # Получаем информацию о пользователе
+            user_info = users_map.get(from_id, {"name": "Неизвестный пользователь", "photo": ""})
+            
+            # Извлекаем прикрепления
+            attachments = comment.get("attachments", [])
+            attachment_data = []
+            
+            for attachment in attachments:
+                att_type = attachment.get("type", "")
+                
+                if att_type == "photo":
+                    photo = attachment.get("photo", {})
+                    if photo.get("sizes"):
+                        try:
+                            max_size = max(
+                                photo.get("sizes", []), 
+                                key=lambda size: size.get("width", 0) * size.get("height", 0)
+                            )
+                            photo_url = max_size.get("url", "")
+                            attachment_data.append({
+                                "type": "photo",
+                                "url": photo_url
+                            })
+                        except (ValueError, KeyError):
+                            logger.warning(f"Не удалось получить URL фото из прикрепления")
+                            
+                elif att_type == "doc":
+                    doc = attachment.get("doc", {})
+                    doc_url = doc.get("url", "")
+                    doc_title = doc.get("title", "Документ")
+                    attachment_data.append({
+                        "type": "doc",
+                        "url": doc_url,
+                        "title": doc_title
+                    })
+                    
+                elif att_type == "link":
+                    link = attachment.get("link", {})
+                    link_url = link.get("url", "")
+                    link_title = link.get("title", "Ссылка")
+                    attachment_data.append({
+                        "type": "link",
+                        "url": link_url,
+                        "title": link_title
+                    })
+            
+            # Формируем объект комментария
+            comment_data = {
+                "id": comment.get("id", 0),
+                "date": date,
+                "text": text,
+                "from_id": from_id,
+                "user": user_info,
+                "attachments": attachment_data
+            }
+            
+            result.append(comment_data)
+        
+        logger.info(f"Получено {len(result)} комментариев из темы {topic_id} группы {group_id}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении комментариев из темы {topic_id}: {e}")
+        return []
+
+
+def get_topic_info(token, group_id, topic_id):
+    """
+    Получает информацию о теме обсуждения ВКонтакте
+    
+    Args:
+        token: токен доступа ВКонтакте
+        group_id: ID группы ВКонтакте (без минуса)
+        topic_id: ID темы (обсуждения)
+    
+    Returns:
+        Словарь с информацией о теме
+    """
+    try:
+        vk_session = get_vk_session(token)
+        if not vk_session:
+            return None
+            
+        vk = vk_session.get_api()
+        
+        # Получаем информацию о теме
+        topic = vk.board.getTopics(
+            group_id=group_id,
+            topic_ids=[topic_id],
+            extended=1,  # Расширенная информация
+            preview=1,   # Получаем текст первого сообщения
+            preview_length=0  # Полный текст
+        )
+        
+        if not topic or "items" not in topic or not topic["items"]:
+            logger.warning(f"Тема {topic_id} не найдена в группе {group_id}")
+            return None
+        
+        # Получаем первую тему из списка
+        topic_data = topic["items"][0]
+        
+        # Собираем информацию
+        result = {
+            "id": topic_data.get("id", 0),
+            "title": topic_data.get("title", "Без названия"),
+            "created": topic_data.get("created", 0),
+            "comments": topic_data.get("comments", 0),
+            "text": topic_data.get("first_comment", ""),
+            "updated": topic_data.get("updated", 0),
+        }
+        
+        logger.info(f"Получена информация о теме {topic_id} группы {group_id}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении информации о теме {topic_id}: {e}")
+        return None
+
+
+# Асинхронные обертки для функций парсинга
+
+async def get_topic_comments_async(token, group_id, topic_id, count=100):
+    """Асинхронная обертка для get_topic_comments"""
+    return await run_in_executor(get_topic_comments, token, group_id, topic_id, count)
+
+async def get_topic_info_async(token, group_id, topic_id):
+    """Асинхронная обертка для get_topic_info"""
+    return await run_in_executor(get_topic_info, token, group_id, topic_id) 
