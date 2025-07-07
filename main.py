@@ -1657,14 +1657,11 @@ async def vk_partner_handler(message: types.Message):
     # Извлекаем group_id из конфигурации
     group_id = str(config.VK_GROUP_ID).replace("-", "")
     
-    # Получаем информацию о теме и последние комментарии
+    # Получаем информацию о теме
     topic_info = None
-    recent_comments = []
     
     try:
         topic_info = await get_topic_info_async(config.VK_TOKEN, group_id, topic_id)
-        if topic_info:
-            recent_comments = await get_topic_comments_async(config.VK_TOKEN, group_id, topic_id, count=5)
     except Exception as e:
         logger.error(f"Ошибка при получении данных из темы VK: {e}")
     
@@ -1691,21 +1688,14 @@ async def vk_partner_handler(message: types.Message):
     # Добавляем ссылку на тему
     text_message += f"<a href='{config.VK_PARTNER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
     
-    # Если есть последние комментарии, добавляем их
-    if recent_comments:
-        text_message += "\n\n<b>Последние заявки на партнерство:</b>\n"
-        
-        for i, comment in enumerate(recent_comments[:3]):  # Показываем максимум 3 последних комментария
-            # Получаем текст комментария (обрезаем, если слишком длинный)
-            comment_text = comment.get("text", "")
-            if len(comment_text) > 100:
-                comment_text = comment_text[:97] + "..."
-            
-            # Получаем имя пользователя
-            user_name = comment.get("user", {}).get("name", "Пользователь")
-            
-            # Форматируем вывод комментария
-            text_message += f"\n{i+1}. <b>{user_name}</b>: {comment_text}"
+    # Используем полный текст описания из темы, если он доступен
+    if topic_info and topic_info.get("text"):
+        # Форматируем и добавляем полный текст темы, если он еще не добавлен
+        if "description" not in locals() or not description:
+            topic_text = topic_info.get("text", "")
+            # Заменяем переносы строк на HTML-теги <br>
+            topic_text = topic_text.replace("\n", "<br>")
+            text_message += f"\n\n{topic_text}"
     
     # Удаляем сообщение о загрузке
     await loading_message.delete()
@@ -1765,14 +1755,11 @@ async def vk_master_handler(message: types.Message):
     # Извлекаем group_id из конфигурации
     group_id = str(config.VK_GROUP_ID).replace("-", "")
     
-    # Получаем информацию о теме и последние комментарии
+    # Получаем информацию о теме
     topic_info = None
-    recent_comments = []
     
     try:
         topic_info = await get_topic_info_async(config.VK_TOKEN, group_id, topic_id)
-        if topic_info:
-            recent_comments = await get_topic_comments_async(config.VK_TOKEN, group_id, topic_id, count=5)
     except Exception as e:
         logger.error(f"Ошибка при получении данных из темы VK: {e}")
     
@@ -1799,21 +1786,13 @@ async def vk_master_handler(message: types.Message):
     # Добавляем ссылку на тему
     text_message += f"\n\n<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
     
-    # Если есть последние комментарии, добавляем их
-    if recent_comments:
-        text_message += "\n\n<b>Последние заявки в базу мастеров:</b>\n"
-        
-        for i, comment in enumerate(recent_comments[:3]):  # Показываем максимум 3 последних комментария
-            # Получаем текст комментария (обрезаем, если слишком длинный)
-            comment_text = comment.get("text", "")
-            if len(comment_text) > 100:
-                comment_text = comment_text[:97] + "..."
-            
-            # Получаем имя пользователя
-            user_name = comment.get("user", {}).get("name", "Пользователь")
-            
-            # Форматируем вывод комментария
-            text_message += f"\n{i+1}. <b>{user_name}</b>: {comment_text}"
+    # Используем полный текст описания из темы, если он доступен
+    if topic_info and topic_info.get("text"):
+        # Форматируем и добавляем полный текст темы
+        topic_text = topic_info.get("text", "")
+        # Заменяем переносы строк на HTML-теги <br>
+        topic_text = topic_text.replace("\n", "<br>")
+        text_message += f"\n\n{topic_text}"
     
     # Удаляем сообщение о загрузке
     await loading_message.delete()
