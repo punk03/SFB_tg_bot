@@ -1693,8 +1693,8 @@ async def vk_partner_handler(message: types.Message):
         # Форматируем и добавляем текст первого сообщения темы
         topic_text = topic_info.get("text", "")
         # Ограничиваем длину текста, если он слишком длинный
-        if len(topic_text) > 500:
-            topic_text = topic_text[:497] + "..."
+        if len(topic_text) > 1000:
+            topic_text = topic_text[:997] + "..."
         
         # Добавляем текст с правильным форматированием для Telegram
         text_message += f"\n\n{topic_text}"
@@ -1719,20 +1719,8 @@ async def vk_master_handler(message: types.Message):
     # Проверяем есть ли кэш категорий для информационного сообщения
     global non_empty_masters_cache
     
-    # Формируем сообщение о категориях
+    # Убираем вывод списка категорий, чтобы уместилась информация из ВК
     category_info = ""
-    if non_empty_masters_cache and "all_categories" in non_empty_masters_cache:
-        categories = list(non_empty_masters_cache["all_categories"].keys())
-        if categories:
-            category_info = "\n\n<b>Доступные категории мастеров:</b>\n"
-            for cat in sorted(categories):
-                # Убираем эмодзи из названия категории для вывода
-                cleaned_cat = cat
-                for emoji in ["🔨", "🚜", "🏗", "🔧", "📁"]:
-                    if cleaned_cat.startswith(emoji + " "):
-                        cleaned_cat = cleaned_cat[len(emoji) + 1:]
-                        break
-                category_info += f"• {cleaned_cat}\n"
     
     # Извлекаем topic_id из URL
     topic_url = config.VK_MASTER_TOPIC_URL
@@ -1777,7 +1765,7 @@ async def vk_master_handler(message: types.Message):
     text_message += (
         "Чтобы попасть в базу мастеров:\n\n"
         "1️⃣ Подготовьте фотографию с информацией о ваших услугах\n"
-        "2️⃣ Укажите категорию из списка ниже\n"
+        "2️⃣ Укажите категорию услуг\n"
         "3️⃣ Оставьте заявку по ссылке"
     )
     
@@ -1793,8 +1781,8 @@ async def vk_master_handler(message: types.Message):
         # Форматируем и добавляем текст первого сообщения темы
         topic_text = topic_info.get("text", "")
         # Ограничиваем длину текста, если он слишком длинный
-        if len(topic_text) > 500:
-            topic_text = topic_text[:497] + "..."
+        if len(topic_text) > 1000:
+            topic_text = topic_text[:997] + "..."
         
         # Добавляем текст с правильным форматированием для Telegram
         text_message += f"\n\n{topic_text}"
