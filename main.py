@@ -1485,8 +1485,27 @@ async def show_shop_info(message: types.Message, state: FSMContext):
     # Получаем информацию о выбранном магазине
     shop = shops[found_shop]
     
-    # Создаем клавиатуру с кнопками навигации
-    kb = buttons.navigation_keyboard(include_shop_list=True, include_shop_categories=True)
+    # Создаем клавиатуру с кнопками магазинов и навигации
+    # Сначала создаем InlineKeyboardMarkup
+    kb = InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем кнопки для других магазинов в этой категории
+    shop_buttons = []
+    for shop_key in shops.keys():
+        if shop_key != found_shop:  # Исключаем текущий магазин
+            shop_buttons.append(InlineKeyboardButton(f"🏪 {shop_key}", callback_data=f"shop:{shop_key}"))
+    
+    # Добавляем кнопки магазинов в клавиатуру
+    for button in shop_buttons[:5]:  # Ограничиваем до 5 магазинов, чтобы не перегружать интерфейс
+        kb.add(button)
+    
+    # Если магазинов больше 5, добавляем кнопку "Показать все магазины"
+    if len(shop_buttons) > 5:
+        kb.add(InlineKeyboardButton("📋 Показать все магазины", callback_data="show_all_shops"))
+    
+    # Добавляем кнопки навигации
+    kb.add(InlineKeyboardButton("◀️ Вернуться к категориям магазинов", callback_data="back_to_shop_categories"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
     
     # Форматируем основную информацию о магазине
     shop_info = f"<b>🏪 {shop['title']}</b>\n\n"
@@ -2723,32 +2742,259 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
 # Обработчик для кнопки "Главное меню" в inline-клавиатуре
 @dp.callback_query_handler(lambda c: c.data == "main_menu", state="*")
 async def main_menu_callback(callback_query: types.CallbackQuery, state: FSMContext):
-    # Удаляем текущее сообщение с inline-клавиатурой
-    await callback_query.message.delete()
-    
-    # Отвечаем на callback, чтобы убрать часики на кнопке
-    await callback_query.answer("Возвращаемся в главное меню")
+    # Отвечаем на callback-запрос
+    await callback_query.answer()
     
     # Сбрасываем состояние
     await state.finish()
     
-    # Получаем имя пользователя
-    user_name = callback_query.from_user.first_name
-    
-    # Получаем описание группы из ВКонтакте или из кэша
-    welcome_message = await get_group_description_async(config.VK_TOKEN, config.VK_GROUP_ID)
-    
-    # Если не удалось получить описание, используем сообщение из конфига
-    if not welcome_message:
-        welcome_message = config.WELCOME_MESSAGE
-    
-    # Отправляем приветственное сообщение с главной клавиатурой
-    await send_message_with_links(
-        callback_query.message,
-        f"👋 Здравствуйте, {user_name}!\n\n{welcome_message}",
+    # Отправляем главное меню
+    await callback_query.message.answer(
+        "🏠 <b>Главное меню</b>\n\nВыберите раздел из меню ниже:", 
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.main
     )
+
+# Обработчик для выбора магазина через inline-кнопки
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('shop:'), state=User.get_shop_info)
+async def process_shop_selection(callback_query: types.CallbackQuery, state: FSMContext):
+    # Извлекаем название выбранного магазина из callback_data
+    shop_name = callback_query.data.split(':', 1)[1]
+    
+    # Получаем данные из состояния
+    data = await state.get_data()
+    current_category = data.get('current_category')
+    
+    # Если нет текущей категории, возвращаемся к выбору категорий
+    if not current_category:
+        await callback_query.message.answer("⚠️ Произошла ошибка. Выберите категорию магазинов заново.", 
+                          reply_markup=buttons.go_back())
+        await callback_query.answer()
+        await back_to_shop_categories(callback_query.message, state)
+        return
+    
+    # Получаем список магазинов для текущей категории
+    shops = data.get(current_category, {})
+    
+    # Если список магазинов пуст, возвращаемся к выбору категорий
+    if not shops:
+        await callback_query.message.answer(
+            f"⚠️ В категории '{current_category}' нет магазинов. Возвращаемся к категориям.", 
+            reply_markup=buttons.go_back()
+        )
+        await callback_query.answer()
+        await back_to_shop_categories(callback_query.message, state)
+        return
+    
+    # Проверяем, существует ли выбранный магазин
+    if shop_name not in shops:
+        await callback_query.answer("⚠️ Магазин не найден")
+        return
+    
+    # Показываем сообщение о загрузке
+    loading_message = await callback_query.message.answer("🔄 <b>Загружаю информацию о магазине...</b>\n\nПожалуйста, подождите.", parse_mode=ParseMode.HTML)
+    
+    # Получаем информацию о выбранном магазине
+    shop = shops[shop_name]
+    
+    # Создаем клавиатуру с кнопками магазинов и навигации
+    kb = InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем кнопки для других магазинов в этой категории
+    shop_buttons = []
+    for shop_key in shops.keys():
+        if shop_key != shop_name:  # Исключаем текущий магазин
+            shop_buttons.append(InlineKeyboardButton(f"🏪 {shop_key}", callback_data=f"shop:{shop_key}"))
+    
+    # Добавляем кнопки магазинов в клавиатуру
+    for button in shop_buttons[:5]:  # Ограничиваем до 5 магазинов, чтобы не перегружать интерфейс
+        kb.add(button)
+    
+    # Если магазинов больше 5, добавляем кнопку "Показать все магазины"
+    if len(shop_buttons) > 5:
+        kb.add(InlineKeyboardButton("📋 Показать все магазины", callback_data="show_all_shops"))
+    
+    # Добавляем кнопки навигации
+    kb.add(InlineKeyboardButton("◀️ Вернуться к категориям магазинов", callback_data="back_to_shop_categories"))
+    kb.add(InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu"))
+    
+    # Форматируем основную информацию о магазине
+    shop_info = f"<b>🏪 {shop['title']}</b>\n\n"
+    
+    # Добавляем описание, если оно есть
+    if shop.get('description'):
+        shop_info += f"{shop['description']}\n\n"
+    
+    # Добавляем адрес, если он есть
+    if shop.get('address'):
+        shop_info += f"📍 <b>Адрес:</b> {shop['address']}\n"
+    
+    # Добавляем телефон, если он есть
+    if shop.get('phone'):
+        shop_info += f"📞 <b>Телефон:</b> {shop['phone']}\n"
+    
+    # Добавляем время работы, если оно есть
+    if shop.get('work_hours'):
+        shop_info += f"🕒 <b>Время работы:</b> {shop['work_hours']}\n"
+    
+    # Добавляем сайт, если он есть
+    if shop.get('website'):
+        # Проверяем, есть ли протокол в URL
+        website = shop['website']
+        if website and not (website.startswith('http://') or website.startswith('https://')):
+            website = f"https://{website}"
+        shop_info += f"🌐 <b>Сайт:</b> <a href='{website}'>{shop['website']}</a>\n"
+    
+    # Добавляем ссылку на ВКонтакте, если она есть
+    if shop.get('vk_url'):
+        shop_info += f"\n🔗 <a href='{shop['vk_url']}'>Смотреть в магазине ВКонтакте</a>\n"
+    
+    # Удаляем сообщение о загрузке
+    await loading_message.delete()
+    
+    # Отвечаем на callback-запрос
+    await callback_query.answer()
+    
+    # Получаем URL изображения
+    photo_url = shop.get('photo')
+    
+    # Если нет URL фото, отправляем только текст
+    if not photo_url:
+        logger.warning(f"Отсутствует URL фото для магазина: {shop['title']}")
+        
+        # Добавляем ссылки на ресурсы
+        shop_info = add_links_footer(shop_info)
+        
+        # Редактируем текущее сообщение или отправляем новое
+        try:
+            await callback_query.message.edit_text(
+                shop_info,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        except Exception:
+            # Если не удалось отредактировать сообщение, отправляем новое
+            await callback_query.message.answer(
+                shop_info,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        return
+    
+    # Проверяем длину подписи к фото
+    if len(shop_info) > 1024:
+        logger.info(f"Слишком длинная подпись для магазина '{shop['title']}': {len(shop_info)} символов. Отправляем фото и текст отдельно.")
+        
+        try:
+            # Удаляем текущее сообщение
+            await callback_query.message.delete()
+            
+            # Отправляем фото без подписи
+            await callback_query.message.answer_photo(
+                photo=photo_url,
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Отправляем информацию отдельным сообщением с добавлением ссылок
+            shop_info = add_links_footer(shop_info)
+            await callback_query.message.answer(
+                shop_info,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+            logger.info(f"Успешно отправлено фото магазина '{shop['title']}' и отдельное текстовое описание")
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Ошибка при отправке фото и информации магазина '{shop['title']}': {error_msg}")
+            
+            # Отправляем только информацию без фото при ошибке
+            await callback_query.message.answer(
+                f"⚠️ Не удалось загрузить фото магазина.\n\n{shop_info}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        
+        return
+    
+    # Если подпись не слишком длинная, отправляем фото с подписью
+    try:
+        # Удаляем текущее сообщение
+        await callback_query.message.delete()
+        
+        # Отправляем новое сообщение с фото и подписью
+        await callback_query.message.answer_photo(
+            photo=photo_url,
+            caption=shop_info,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
+        )
+        logger.info(f"Успешно отправлено фото магазина: {shop['title']}")
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Ошибка при отправке фото магазина '{shop['title']}': {error_msg}")
+        
+        # Проверяем тип ошибки и предоставляем соответствующее сообщение
+        if "Bad Request" in error_msg and "Wrong file identifier" in error_msg:
+            logger.warning(f"Ошибка с URL изображения: {photo_url}")
+            await callback_query.message.answer(
+                f"⚠️ Не удалось загрузить логотип магазина.\n\n{shop_info}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        elif "Bad Request" in error_msg and "PHOTO_INVALID_DIMENSIONS" in error_msg:
+            logger.warning(f"Изображение имеет недопустимые размеры: {photo_url}")
+            await callback_query.message.answer(
+                f"⚠️ Логотип магазина имеет недопустимый формат.\n\n{shop_info}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+        else:
+            await callback_query.message.answer(
+                f"⚠️ Не удалось загрузить информацию о магазине.\n\n{shop_info}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+
+# Обработчик для кнопки "Показать все магазины"
+@dp.callback_query_handler(lambda c: c.data == "show_all_shops", state=User.get_shop_info)
+async def show_all_shops(callback_query: types.CallbackQuery, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    current_category = data.get('current_category')
+    
+    # Если нет текущей категории, возвращаемся к выбору категорий
+    if not current_category:
+        await callback_query.message.answer("⚠️ Произошла ошибка. Выберите категорию магазинов заново.", 
+                          reply_markup=buttons.go_back())
+        await callback_query.answer()
+        await back_to_shop_categories(callback_query.message, state)
+        return
+    
+    # Получаем список магазинов для текущей категории
+    shops = data.get(current_category, {})
+    
+    # Создаем клавиатуру с кнопками магазинов и кнопкой возврата к категориям
+    kb = buttons.generator_with_categories_button(shops.keys(), row_width=1, force_single_column=True, preserve_emoji=True)
+    
+    # Отвечаем на callback-запрос
+    await callback_query.answer()
+    
+    # Отправляем сообщение со списком всех магазинов
+    await callback_query.message.answer(
+        f"🏪 <b>Все магазины категории:</b> {current_category}\n\nВыберите магазин из списка:", 
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb
+    )
+
+# Обработчик для кнопки "Вернуться к категориям магазинов"
+@dp.callback_query_handler(lambda c: c.data == "back_to_shop_categories", state=User.get_shop_info)
+async def back_to_shop_categories_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    # Отвечаем на callback-запрос
+    await callback_query.answer()
+    
+    # Вызываем обработчик возврата к категориям магазинов
+    await back_to_shop_categories(callback_query.message, state)
 
 if __name__ == '__main__':
     try:
