@@ -766,9 +766,16 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
     # Получаем текущую фотографию
     photo = photos[current_index]
     
+    # Получаем информацию о мастере
+    master_info = data.get('master_info', {})
+    master_name = master_info.get('text', '').strip()
+    
+    # Получаем первую строку из описания мастера (ФИО)
+    master_fio = master_name.split('\n')[0] if master_name and '\n' in master_name else master_name
+    
     # Формируем подпись
     caption = photo.get('description', '') if photo.get('description') else f"Работа {current_index+1} из {len(photos)}"
-    full_caption = f"<b>🛠️ Работы мастера ({category})</b>\n\n{caption}"
+    full_caption = f"<b>🛠️ Работы мастера {master_fio} ({category})</b>\n\n{caption}"
     
     # Добавляем ссылки с помощью нашей функции
     full_caption = add_links_footer(full_caption)
@@ -2417,6 +2424,9 @@ async def process_master_works(callback_query: types.CallbackQuery, state: FSMCo
     # Получаем имя мастера
     master_name = master_info.get('text', 'Мастер')
     
+    # Получаем первую строку из описания мастера (ФИО)
+    master_fio = master_name.split('\n')[0] if master_name and '\n' in master_name else master_name
+    
     if not master_works:
         await bot.answer_callback_query(callback_query.id, "У этого мастера нет загруженных работ")
         return
@@ -2425,7 +2435,7 @@ async def process_master_works(callback_query: types.CallbackQuery, state: FSMCo
     await bot.answer_callback_query(callback_query.id, "Загружаю работы мастера...")
     
     # Формируем сообщение с работами мастера
-    message_text = f"📷 <b>Все работы мастера:</b> {master_name}\n\n"
+    message_text = f"📷 <b>Все работы мастера {master_fio}:</b>\n\n"
     
     # Добавляем информацию о каждой работе
     for i, work in enumerate(master_works):
