@@ -65,7 +65,7 @@ LOG_FILE_BACKUP_COUNT = 3  # Количество файлов бэкапа ло
 # URLs
 VK_GROUP_ID_STR = str(VK_GROUP_ID).replace('-', '')
 VK_GROUP_URL = f"https://vk.com/public{VK_GROUP_ID_STR}"
-TG_CHANNEL_URL = "https://t.me/stroy_forum33"
+TG_CHANNEL_URL = "https://t.me/sfb_31"
 VK_PARTNER_TOPIC_URL = "https://vk.com/topic-95855103_49010445"
 VK_MASTER_TOPIC_URL = "https://vk.com/topic-95855103_49010449"
 TG_BOT_URL = "https://t.me/stroy_forum_belgorod_bot"  # URL телеграм-бота
@@ -73,7 +73,7 @@ TG_BOT_URL = "https://t.me/stroy_forum_belgorod_bot"  # URL телеграм-б�
 # Строка с ссылками на все ресурсы
 LINKS_FOOTER = f"\n\n🔗 <b>Наши ресурсы:</b>\n" \
               f"🌐 <a href='{VK_GROUP_URL}'>ВКонтакте</a>\n" \
-              f"📱 <a href='{TG_CHANNEL_URL}'>Telegram канал</a>\n" \
+              f"📱 <a href='{TG_CHANNEL_URL}'>Telegram канал СФБ</a>\n" \
               f"🤖 <a href='{TG_BOT_URL}'>Telegram бот</a>"
 
 # Сообщения бота
