@@ -774,10 +774,18 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
     
     # Получаем информацию о мастере
     master_info = data.get('master_info', {})
-    master_name = master_info.get('text', '').strip()
+    master_name = master_info.get('text', '').strip() if master_info else ''
+    
+    # Логируем информацию о мастере для отладки
+    logger.info(f"Информация о мастере в send_master_work_photo: {master_name}")
     
     # Получаем первую строку из описания мастера (ФИО)
     master_fio = master_name.split('\n')[0] if master_name and '\n' in master_name else master_name
+    
+    # Если ФИО пустое, используем значение по умолчанию
+    if not master_fio:
+        master_fio = "Неизвестный мастер"
+        logger.warning("ФИО мастера не найдено, используем значение по умолчанию")
     
     # Формируем подпись
     caption = photo.get('description', '') if photo.get('description') else f"Работа {current_index+1} из {len(photos)}"
@@ -1001,6 +1009,9 @@ async def back_to_master_callback(callback_query: types.CallbackQuery, state: FS
             if photo.get('text') == master_text:
                 current_photo_index = i
                 break
+    
+    # Логируем информацию о мастере для отладки
+    logger.info(f"Информация о мастере при возврате: {master_info.get('text', 'Нет информации')}")
     
     # Сохраняем данные для просмотра анкеты мастера, включая информацию о мастере
     await state.update_data(
@@ -2165,6 +2176,10 @@ async def keyboard_back_to_master(message: types.Message, state: FSMContext):
     # Получаем необходимые данные из текущего состояния
     data = await state.get_data()
     category = data.get('current_master_category', 'Мастера')
+    master_info = data.get('master_info', {})
+    
+    # Логируем информацию о мастере для отладки
+    logger.info(f"Информация о мастере при возврате через клавиатуру: {master_info.get('text', 'Нет информации')}")
     
     # Получаем фотографии мастера по категории
     album_id = None
@@ -2204,11 +2219,22 @@ async def keyboard_back_to_master(message: types.Message, state: FSMContext):
     # Переходим обратно в состояние просмотра карусели мастеров
     await User.view_masters_carousel.set()
     
-    # Сохраняем только необходимые данные для просмотра анкеты мастера
+    # Находим индекс мастера по его информации
+    current_photo_index = 0
+    if master_info and master_photos:
+        master_text = master_info.get('text', '')
+        for i, photo in enumerate(master_photos):
+            if photo.get('text') == master_text:
+                current_photo_index = i
+                logger.info(f"Найден индекс мастера: {i}")
+                break
+    
+    # Сохраняем данные для просмотра анкеты мастера, включая информацию о мастере
     await state.update_data(
         current_master_category=category,
         master_photos=master_photos,
-        current_photo_index=0
+        current_photo_index=current_photo_index,
+        master_info=master_info
     )
     
     # Отправляем фото мастера
@@ -2685,6 +2711,16 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
     data = await state.get_data()
     category = data.get('current_master_category', 'Мастера')
     
+    # Получаем текущую фотографию мастера
+    photos = data.get('master_photos', [])
+    current_index = data.get('current_photo_index', 0)
+    
+    # Проверяем, что у нас есть фотографии мастеров и индекс в пределах списка
+    if photos and 0 <= current_index < len(photos):
+        # Сохраняем информацию о текущем мастере
+        master_info = photos[current_index]
+        logger.info(f"Сохраняем информацию о мастере: {master_info.get('text', 'Неизвестный мастер')}")
+    
     try:
         # Сначала проверяем, есть ли работы мастера в кэше
         work_photos = []
@@ -2733,7 +2769,13 @@ async def master_works_callback(callback_query: types.CallbackQuery, state: FSMC
         await state.finish()
         
         # Получаем информацию о мастере
-        master_info = data.get('master_info', {})
+        master_info = None
+        if photos and 0 <= current_index < len(photos):
+            master_info = photos[current_index]
+            logger.info(f"Используем информацию о мастере из фотографии: {master_info.get('text', 'Неизвестный мастер')}")
+        else:
+            master_info = data.get('master_info', {})
+            logger.info(f"Используем информацию о мастере из состояния: {master_info.get('text', 'Неизвестный мастер')}")
         
         # Переходим в состояние просмотра работ мастера
         await User.view_master_works.set()
