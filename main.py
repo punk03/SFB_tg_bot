@@ -18,6 +18,16 @@ import sys
 import socket
 import tempfile
 import psutil
+import re
+import json
+import pytz
+import vk_api
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.utils.executor import start_polling
+from message_utils import add_links_footer, send_message_with_links, edit_message_with_links, send_photo_with_links
 
 # Настройка логирования
 if config.LOG_TO_FILE:
@@ -385,7 +395,8 @@ async def send_welcome(message: types.Message):
     if not welcome_message:
         welcome_message = config.WELCOME_MESSAGE
     
-    await message.answer(
+    await send_message_with_links(
+        message,
         f"👋 Здравствуйте, {user_name}!\n\n{welcome_message}", 
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.main
@@ -402,7 +413,8 @@ async def back_to_main(message: types.Message, state: FSMContext):
     if not welcome_message:
         welcome_message = config.WELCOME_MESSAGE
     
-    await message.answer(
+    await send_message_with_links(
+        message,
         f"👋 Здравствуйте, {user_name}!\n\n{welcome_message}", 
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.main
@@ -568,17 +580,23 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
     category = data.get('current_master_category', 'Мастера')
     
     if not photos or len(photos) == 0:
+        text_no_photos = "⚠️ Фотографии не найдены."
+        # Добавляем футер с ссылками
+        text_no_photos_with_links = add_links_footer(text_no_photos)
+        
         if edit_message_id:
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=edit_message_id,
-                text="⚠️ Фотографии не найдены.",
+                text=text_no_photos_with_links,
+                parse_mode=ParseMode.HTML,
                 reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
             )
         else:
             await bot.send_message(
                 chat_id=chat_id,
-                text="⚠️ Фотографии не найдены.",
+                text=text_no_photos_with_links,
+                parse_mode=ParseMode.HTML,
                 reply_markup=buttons.navigation_keyboard(include_masters_categories=True)
             )
         return
@@ -590,8 +608,8 @@ async def send_master_photo(chat_id, state, edit_message_id=None):
     caption = photo.get('description', '') if photo.get('description') else f"Фото {current_index+1} из {len(photos)}"
     full_caption = f"<b>📸 {category}</b>\n\n{caption}"
     
-    # Добавляем ссылку на основной паблик ВКонтакте
-    full_caption += f"\n\n🌐 <a href='{config.VK_GROUP_URL}'>Перейти в основной паблик СФБ ВКонтакте</a>"
+    # Добавляем ссылки с помощью нашей функции
+    full_caption = add_links_footer(full_caption)
     
     # Создаем клавиатуру с кнопками навигации
     kb = InlineKeyboardMarkup(row_width=2)
@@ -723,17 +741,23 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
         inline_kb = InlineKeyboardMarkup(row_width=1)
         inline_kb.add(InlineKeyboardButton("◀️ Вернуться к анкете мастера", callback_data="back_to_master"))
         
+        text_no_photos = "⚠️ Фотографии работ не найдены."
+        # Добавляем футер с ссылками
+        text_no_photos_with_links = add_links_footer(text_no_photos)
+        
         if edit_message_id:
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=edit_message_id,
-                text="⚠️ Фотографии работ не найдены.",
+                text=text_no_photos_with_links,
+                parse_mode=ParseMode.HTML,
                 reply_markup=inline_kb
             )
         else:
             await bot.send_message(
                 chat_id=chat_id,
-                text="⚠️ Фотографии работ не найдены.",
+                text=text_no_photos_with_links,
+                parse_mode=ParseMode.HTML,
                 reply_markup=inline_kb
             )
         return
@@ -745,8 +769,8 @@ async def send_master_work_photo(chat_id, state, edit_message_id=None):
     caption = photo.get('description', '') if photo.get('description') else f"Работа {current_index+1} из {len(photos)}"
     full_caption = f"<b>🛠️ Работы мастера ({category})</b>\n\n{caption}"
     
-    # Добавляем ссылку на основной паблик ВКонтакте
-    full_caption += f"\n\n🌐 <a href='{config.VK_GROUP_URL}'>Перейти в основной паблик СФБ ВКонтакте</a>"
+    # Добавляем ссылки с помощью нашей функции
+    full_caption = add_links_footer(full_caption)
     
     # Создаем inline-клавиатуру только с кнопками пролистывания фото
     kb = InlineKeyboardMarkup(row_width=2)
@@ -1011,17 +1035,11 @@ async def show_shop(message: types.Message, state: FSMContext):
             if item_url:
                 caption += f"\n\n<a href='{item_url}'>Посмотреть в магазине ВКонтакте</a>"
             
-            # Добавляем ссылку на основной паблик ВКонтакте
-            caption += f"\n\n🌐 <a href='{config.VK_GROUP_URL}'>Перейти в основной паблик СФБ ВКонтакте</a>"
+            # Добавляем ссылки на все ресурсы
+            caption = add_links_footer(caption)
             
-            # Проверяем длину подписи    
-            if len(caption) <= 1024:  # Telegram ограничивает длину подписи к фото
-                await message.answer_photo(photo=item['photo'], caption=caption, parse_mode=ParseMode.HTML)
-            else:
-                # Если подпись слишком длинная, отправляем фото и текст отдельно
-                logger.info(f"Слишком длинная подпись для товара '{item['title']}': {len(caption)} символов. Отправляем фото и текст отдельно.")
-                await message.answer_photo(photo=item['photo'])
-                await message.answer(caption, parse_mode=ParseMode.HTML)
+            # Используем нашу функцию для отправки фото с ссылками
+            await send_photo_with_links(message, photo=item['photo'], caption=caption, parse_mode=ParseMode.HTML)
             
             # Небольшая задержка между сообщениями
             await asyncio.sleep(0.3)
@@ -1509,6 +1527,10 @@ async def show_shop_info(message: types.Message, state: FSMContext):
     # Если нет URL фото, отправляем только текст
     if not photo_url:
         logger.warning(f"Отсутствует URL фото для магазина: {shop['title']}")
+        
+        # Добавляем ссылки на ресурсы
+        shop_info = add_links_footer(shop_info)
+        
         await message.answer(
             shop_info,
             parse_mode=ParseMode.HTML,
@@ -1527,7 +1549,8 @@ async def show_shop_info(message: types.Message, state: FSMContext):
                 parse_mode=ParseMode.HTML
             )
             
-            # Отправляем информацию отдельным сообщением
+            # Отправляем информацию отдельным сообщением с добавлением ссылок
+            shop_info = add_links_footer(shop_info)
             await message.answer(
                 shop_info,
                 parse_mode=ParseMode.HTML,
@@ -1636,14 +1659,19 @@ async def vk_master_handler(message: types.Message):
                         break
                 category_info += f"• {cleaned_cat}\n"
     
-    await message.answer(
+    text_message = (
         "📋 <b>Хочу в базу мастеров и спецтехники</b>\n\n"
         "Чтобы попасть в базу мастеров:\n\n"
         "1️⃣ Подготовьте фотографию с информацией о ваших услугах\n"
         "2️⃣ Укажите категорию из списка ниже\n"
         "3️⃣ Оставьте заявку по ссылке:" 
         f"{category_info}\n\n"
-        f"<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>",
+        f"<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
+    )
+    
+    await send_message_with_links(
+        message,
+        text_message,
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.go_back()
     )
@@ -1651,10 +1679,15 @@ async def vk_master_handler(message: types.Message):
 # Обработчик для кнопки "Стена сообщества"
 @dp.message_handler(lambda m: m.text == "📰 Стена сообщества" or m.text == "Стена сообщества")
 async def community_wall_handler(message: types.Message):
-    await message.answer(
+    text_message = (
         "📰 <b>Стена сообщества</b>\n\n"
         "Посетите нашу стену сообщества, чтобы быть в курсе всех новостей:\n"
-        f"<a href='{config.TG_CHANNEL_URL}'>Стена сообщества в Telegram</a>",
+        f"<a href='{config.TG_CHANNEL_URL}'>Стена сообщества в Telegram</a>"
+    )
+    
+    await send_message_with_links(
+        message,
+        text_message,
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.go_back()
     )
@@ -2606,7 +2639,8 @@ async def main_menu_callback(callback_query: types.CallbackQuery, state: FSMCont
         welcome_message = config.WELCOME_MESSAGE
     
     # Отправляем приветственное сообщение с главной клавиатурой
-    await callback_query.message.answer(
+    await send_message_with_links(
+        callback_query.message,
         f"👋 Здравствуйте, {user_name}!\n\n{welcome_message}",
         parse_mode=ParseMode.HTML,
         reply_markup=buttons.main

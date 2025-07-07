@@ -68,6 +68,13 @@ VK_GROUP_URL = f"https://vk.com/public{VK_GROUP_ID_STR}"
 TG_CHANNEL_URL = "https://t.me/stroy_forum33"
 VK_PARTNER_TOPIC_URL = "https://vk.com/topic-95855103_49010445"
 VK_MASTER_TOPIC_URL = "https://vk.com/topic-95855103_49010449"
+TG_BOT_URL = "https://t.me/stroy_forum_belgorod_bot"  # URL телеграм-бота
+
+# Строка с ссылками на все ресурсы
+LINKS_FOOTER = f"\n\n🔗 <b>Наши ресурсы:</b>\n" \
+              f"🌐 <a href='{VK_GROUP_URL}'>ВКонтакте</a> | " \
+              f"📱 <a href='{TG_CHANNEL_URL}'>Telegram канал</a> | " \
+              f"🤖 <a href='{TG_BOT_URL}'>Telegram бот</a>"
 
 # Сообщения бота
 WELCOME_MESSAGE = """🏗 <b>Строй Форум Белгород - сервис для мастеров и клиентов</b>
