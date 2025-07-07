@@ -1075,13 +1075,10 @@ async def show_shop(message: types.Message, state: FSMContext):
                 except:
                     await message.answer(f"⚠️ Не удалось загрузить информацию о товаре: {item['title']}")
 
-    # После отправки всех товаров показываем список магазинов снова
-    # Создаем клавиатуру с кнопками магазинов и кнопкой возврата к категориям
-    kb = buttons.generator_with_categories_button(shops.keys(), row_width=1, force_single_column=True, preserve_emoji=True)
+    # После отправки всех товаров показываем сообщение о завершении просмотра
     await message.answer(
-        f"🏪 <b>Магазины категории:</b> {current_category}\n\nВыберите магазин из списка:", 
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb
+        f"🔍 <b>Просмотр товаров завершен.</b>\n\nВы можете выбрать другой магазин из списка или вернуться к категориям.", 
+        parse_mode=ParseMode.HTML
     )
 
 @cached
@@ -1490,8 +1487,8 @@ async def show_shop_info(message: types.Message, state: FSMContext):
     # Получаем информацию о выбранном магазине
     shop = shops[found_shop]
     
-    # Используем стандартную клавиатуру навигации
-    kb = buttons.navigation_keyboard(include_shop_list=True, include_shop_categories=False)
+    # Используем клавиатуру с кнопками магазинов и кнопкой возврата к категориям
+    kb = buttons.generator_with_categories_button(shops.keys(), row_width=1, force_single_column=True, preserve_emoji=True)
     
     # Форматируем основную информацию о магазине
     shop_info = f"<b>🏪 {shop['title']}</b>\n\n"
@@ -1622,14 +1619,7 @@ async def show_shop_info(message: types.Message, state: FSMContext):
                 reply_markup=kb
             )
 
-    # После отображения информации о магазине показываем список магазинов снова
-    # Создаем клавиатуру с кнопками магазинов и кнопкой возврата к категориям
-    kb_shops = buttons.generator_with_categories_button(shops.keys(), row_width=1, force_single_column=True, preserve_emoji=True)
-    await message.answer(
-        f"🏪 <b>Магазины категории:</b> {current_category}\n\nВыберите магазин из списка:", 
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_shops
-    )
+
 
 # Обработчик для кнопки "Предложить запись"
 @dp.message_handler(lambda m: m.text == "📝 Предложить запись" or m.text == "Предложить запись")
