@@ -1688,14 +1688,16 @@ async def vk_partner_handler(message: types.Message):
     # Добавляем ссылку на тему
     text_message += f"<a href='{config.VK_PARTNER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
     
-    # Используем полный текст описания из темы, если он доступен
-    if topic_info and topic_info.get("text"):
-        # Форматируем и добавляем полный текст темы, если он еще не добавлен
-        if "description" not in locals() or not description:
-            topic_text = topic_info.get("text", "")
-            # Заменяем переносы строк на HTML-теги <br>
-            topic_text = topic_text.replace("\n", "<br>")
-            text_message += f"\n\n{topic_text}"
+    # Используем только первое сообщение из темы, если оно доступно
+    if topic_info and topic_info.get("text") and ("description" not in locals() or not description):
+        # Форматируем и добавляем текст первого сообщения темы
+        topic_text = topic_info.get("text", "")
+        # Ограничиваем длину текста, если он слишком длинный
+        if len(topic_text) > 500:
+            topic_text = topic_text[:497] + "..."
+        
+        # Добавляем текст с правильным форматированием для Telegram
+        text_message += f"\n\n{topic_text}"
     
     # Удаляем сообщение о загрузке
     await loading_message.delete()
@@ -1786,12 +1788,15 @@ async def vk_master_handler(message: types.Message):
     # Добавляем ссылку на тему
     text_message += f"\n\n<a href='{config.VK_MASTER_TOPIC_URL}'>Оставить заявку в ВКонтакте</a>"
     
-    # Используем полный текст описания из темы, если он доступен
+    # Используем только первое сообщение из темы, если оно доступно
     if topic_info and topic_info.get("text"):
-        # Форматируем и добавляем полный текст темы
+        # Форматируем и добавляем текст первого сообщения темы
         topic_text = topic_info.get("text", "")
-        # Заменяем переносы строк на HTML-теги <br>
-        topic_text = topic_text.replace("\n", "<br>")
+        # Ограничиваем длину текста, если он слишком длинный
+        if len(topic_text) > 500:
+            topic_text = topic_text[:497] + "..."
+        
+        # Добавляем текст с правильным форматированием для Telegram
         text_message += f"\n\n{topic_text}"
     
     # Удаляем сообщение о загрузке
