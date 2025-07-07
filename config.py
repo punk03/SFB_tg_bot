@@ -72,8 +72,8 @@ TG_BOT_URL = "https://t.me/stroy_forum_belgorod_bot"  # URL телеграм-б�
 
 # Строка с ссылками на все ресурсы
 LINKS_FOOTER = f"\n\n🔗 <b>Наши ресурсы:</b>\n" \
-              f"🌐 <a href='{VK_GROUP_URL}'>ВКонтакте</a> | " \
-              f"📱 <a href='{TG_CHANNEL_URL}'>Telegram канал</a> | " \
+              f"🌐 <a href='{VK_GROUP_URL}'>ВКонтакте</a>\n" \
+              f"📱 <a href='{TG_CHANNEL_URL}'>Telegram канал</a>\n" \
               f"🤖 <a href='{TG_BOT_URL}'>Telegram бот</a>"
 
 # Сообщения бота
